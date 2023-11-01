@@ -325,7 +325,6 @@ let known = [
     "EngineProfiler.swift",
     "Environment.swift",
     "Expression.swift",
-    "ExternalWindow.swift",
     "FastNoiseLite.swift",
     "FileAccess.swift",
     "FileDialog.swift",
