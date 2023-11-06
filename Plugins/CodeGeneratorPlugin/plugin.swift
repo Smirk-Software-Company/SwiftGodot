@@ -478,6 +478,7 @@ let known = [
     "MultiplayerPeerExtension.swift",
     "MultiplayerSpawner.swift",
     "MultiplayerSynchronizer.swift",
+    "MultiSceneTree.swift",
     "Mutex.swift",
     "NavigationAgent2D.swift",
     "NavigationAgent3D.swift",
