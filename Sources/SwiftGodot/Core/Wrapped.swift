@@ -157,6 +157,10 @@ open class Wrapped: Equatable, Identifiable, Hashable {
             fatalError("SWIFT: It was not possible to construct a \(name.description)")
         }
     }
+
+    public func free() {
+        gmem_free(UnsafeMutableRawPointer(mutating: handle))
+    }
 }
     
 
