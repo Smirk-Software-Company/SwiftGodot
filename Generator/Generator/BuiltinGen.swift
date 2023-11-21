@@ -11,48 +11,50 @@ import ExtensionApi
 /// Given an initializer of the form "Vector (0, 1, 0)" returns a proper Swift "Vector (x: 0, y: 1, z: 0)" value
 ///
 func getInitializer (_ bc: JGodotBuiltinClass, _ val: String) -> String? {
-    if let pstart = val.firstIndex(of: "("), let pend = val.lastIndex(of: ")"){
-        let splitArgs = val [val.index(pstart, offsetBy: 1)..<pend].split(separator: ", ")
-        // Find a constructor with that number of arguments
-        for constructor in bc.constructors {
-            
-            if constructor.arguments?.count ?? -1 == splitArgs.count {
-                // Found
-                var prefixedArgs = ""
-                for i in 0..<splitArgs.count {
-                    if prefixedArgs.count != 0 { prefixedArgs += ", "}
-                    let name = constructor.arguments! [i].name
-                    var pval = splitArgs [i]
-
-                    // Some Godot constants leak into the initializers
-                    if pval.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) == "inf" {
-                        pval = "Float.infinity"[...]
+    if #available(iOS 16.0, *) {
+        if let pstart = val.firstIndex(of: "("), let pend = val.lastIndex(of: ")"){
+            let splitArgs = val [val.index(pstart, offsetBy: 1)..<pend].split(separator: ", ")
+            // Find a constructor with that number of arguments
+            for constructor in bc.constructors {
+                
+                if constructor.arguments?.count ?? -1 == splitArgs.count {
+                    // Found
+                    var prefixedArgs = ""
+                    for i in 0..<splitArgs.count {
+                        if prefixedArgs.count != 0 { prefixedArgs += ", "}
+                        let name = constructor.arguments! [i].name
+                        var pval = splitArgs [i]
+                        
+                        // Some Godot constants leak into the initializers
+                        if pval.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) == "inf" {
+                            pval = "Float.infinity"[...]
+                        }
+                        
+                        prefixedArgs = prefixedArgs + name + ": " + pval
                     }
-
-                    prefixedArgs = prefixedArgs + name + ": " + pval
+                    return String (val [val.startIndex..<pstart]) + " (" + prefixedArgs + ")"
                 }
-                return String (val [val.startIndex..<pstart]) + " (" + prefixedArgs + ")"
             }
+            
+            // Fallback for missing constructors
+            let format: String?
+            switch (bc.name, splitArgs.count) {
+            case ("Transform2D", 6):
+                format = "Transform2D (xAxis: Vector2 (x: %@, y: %@), yAxis: Vector2 (x: %@, y: %@), origin: Vector2 (x: %@, y: %@))"
+            case ("Basis", 9):
+                format = "Basis (xAxis: Vector3 (x: %@, y: %@, z: %@), yAxis: Vector3 (x: %@, y: %@, z: %@), zAxis: Vector3 (x: %@, y: %@, z: %@))"
+            case ("Transform3D", 12):
+                format = "Transform3D (basis: Basis (xAxis: Vector3 (x: %@, y: %@, z: %@), yAxis: Vector3 (x: %@, y: %@, z: %@), zAxis: Vector3 (x: %@, y: %@, z: %@)), origin: Vector3(x: %@, y: %@, z: %@))"
+            case ("Projection", 16):
+                format = "Projection (xAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), yAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), zAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), wAxis: Vector4 (x: %@, y: %@, z: %@, w: %@))"
+            default:
+                format = nil
+            }
+            if let format {
+                return String (format: format, arguments: splitArgs.map (String.init))
+            }
+            return nil
         }
-        
-        // Fallback for missing constructors
-        let format: String?
-        switch (bc.name, splitArgs.count) {
-        case ("Transform2D", 6):
-            format = "Transform2D (xAxis: Vector2 (x: %@, y: %@), yAxis: Vector2 (x: %@, y: %@), origin: Vector2 (x: %@, y: %@))"
-        case ("Basis", 9):
-            format = "Basis (xAxis: Vector3 (x: %@, y: %@, z: %@), yAxis: Vector3 (x: %@, y: %@, z: %@), zAxis: Vector3 (x: %@, y: %@, z: %@))"
-        case ("Transform3D", 12):
-            format = "Transform3D (basis: Basis (xAxis: Vector3 (x: %@, y: %@, z: %@), yAxis: Vector3 (x: %@, y: %@, z: %@), zAxis: Vector3 (x: %@, y: %@, z: %@)), origin: Vector3(x: %@, y: %@, z: %@))"
-        case ("Projection", 16):
-            format = "Projection (xAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), yAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), zAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), wAxis: Vector4 (x: %@, y: %@, z: %@, w: %@))"
-        default:
-            format = nil
-        }
-        if let format {
-            return String (format: format, arguments: splitArgs.map (String.init))
-        }
-        return nil
     }
     return val
 }
