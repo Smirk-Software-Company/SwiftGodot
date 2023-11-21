@@ -150,6 +150,10 @@ open class Wrapped: Equatable, Identifiable, Hashable {
     }
     
     open class var classInitializer: Void { () }
+
+    public func free() {
+        gmem_free(UnsafeMutableRawPointer(mutating: handle))
+    }
 }
     
 func bindGodotInstance(instance: some Wrapped) {
