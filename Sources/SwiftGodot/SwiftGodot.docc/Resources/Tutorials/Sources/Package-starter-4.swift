@@ -11,10 +11,11 @@ let package = Package(
         .library(
             name: "SimpleRunnerDriver",
             type: .dynamic,
-            targets: ["SimpleRunnerDriver"]),
+            targets: ["SimpleRunnerDriver"]
+        ),
     ],
     dependencies: [
-        .package(url: "https://github.com/migueldeicaza/SwiftGodot", branch: "main")
+        .package(url: "https://github.com/migueldeicaza/SwiftGodot", branch: "main"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -28,6 +29,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SimpleRunnerDriverTests",
-            dependencies: ["SimpleRunnerDriver"]),
+            dependencies: ["SimpleRunnerDriver"]
+        ),
     ]
 )

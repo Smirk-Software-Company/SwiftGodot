@@ -98,7 +98,7 @@ func methodGen (_ p: Printer, method: MethodDefinition, className: String, cdef:
             p ("\(staticVarVisibility)static var \(bindName): GDExtensionMethodBindPtr =", suffix: "()") {
                 p ("let methodName = StringName (\"\(method.name)\")")
             
-                p ("return withUnsafePointer (to: &\(className).godotClassName.content)", arg: " classPtr in") {
+                p ("return withUnsafePointer (to: &\(className).className.content)", arg: " classPtr in") {
                     p ("withUnsafePointer (to: &methodName.content)", arg: " mnamePtr in") {
                         p ("gi.classdb_get_method_bind (classPtr, mnamePtr, \(methodHash))!")
                     }
@@ -186,11 +186,7 @@ func methodGen (_ p: Printer, method: MethodDefinition, className: String, cdef:
             var reference = escapeSwift (snakeToCamel (arg.name))
 
             if method.isVararg {
-                if isRefOptional {
-                    argSetup += "let copy_\(arg.name) = \(reference) == nil ? Variant() : Variant (\(reference)!)\n"
-                } else {
-                    argSetup += "let copy_\(arg.name) = Variant (\(reference))\n"
-                }
+                argSetup += "let copy_\(arg.name) = Variant (\(reference))\n"
             } else if arg.type == "String" {
                 argSetup += "let gstr_\(arg.name) = GString (\(reference))\n"
             } else if argTypeNeedsCopy(godotType: arg.type) {
@@ -403,7 +399,7 @@ func methodGen (_ p: Printer, method: MethodDefinition, className: String, cdef:
                             p ("fatalError (\"Unexpected nil return from a method that should never return nil\")")
                         }
                     }
-                    p ("return lookupObject (nativeHandle: _result)!")
+                    p ("return lookupObject (nativeHandle: _result)")
                 } else if godotReturnType?.starts(with: "typedarray::") ?? false {
                     let defaultInit = makeDefaultInit(godotType: godotReturnType!, initCollection: "content: _result")
                     

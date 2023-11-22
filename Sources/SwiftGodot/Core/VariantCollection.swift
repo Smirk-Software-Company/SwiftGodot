@@ -7,8 +7,14 @@
 
 @_implementationOnly import GDExtension
 
+/// Protocol implemented by the built-in classes in Godot to allow to be wrapped in a ``Variant``
+public protocol GodotVariant {
+    func toVariant () -> Variant
+    init? (_ fromVariant: Variant)
+}
+
 /// This represents a typed array of one of the built-in types from Godot
-public class VariantCollection<Element: VariantStorable>: Collection {
+public class VariantCollection<T:GodotVariant>: Collection {
     var array: GArray
     
     init (content: Int64) {
@@ -35,23 +41,24 @@ public class VariantCollection<Element: VariantStorable>: Collection {
         }
     }
     
-    func toStrong (_ v: Variant) -> Element {
-        Element(v)!
+    func toStrong (_ v: Variant) -> T {
+        return T.init (v)!
     }
     
     /// Accesses the element at the specified position.
-    public subscript (index: Index) -> Element {
+    public subscript (index: Index) -> T {
         get {
             let v = array [index]
-            return Element(v)!
+            return T.init (v)!
         }
         set {
-            array [index] = Variant(newValue)
+            array [index] = newValue.toVariant()
         }
     }
     
     // Required nested types, that tell Swift what our collection contains
     public typealias Index = Int
+    public typealias Element = T
     
     /// The position of the first element in a nonempty collection.
     public var startIndex: Index { 0 }
@@ -89,21 +96,21 @@ public class VariantCollection<Element: VariantStorable>: Collection {
     }
     
     /// Appends an element at the end of the array. See also ``pushFront(value:)``.
-    public final func pushBack (value: Element) {
-        array.pushBack(value: Variant(value))
+    public final func pushBack (value: T) {
+        array.pushBack(value: value.toVariant())
     }
     
     /// Adds an element at the beginning of the array. See also ``pushBack(value:)``.
     ///
     /// > Note: On large arrays, this method is much slower than ``pushBack(value:)`` as it will reindex all the array's elements every time it's called. The larger the array, the slower ``pushFront(value:)`` will be.
     ///
-    public final func pushFront (value: Element) {
-        array.pushFront (value: Variant(value))
+    public final func pushFront (value: T) {
+        array.pushFront (value: value.toVariant())
     }
     
     /// Appends an element at the end of the array (alias of ``pushBack(value:)``).
-    public final func append (value: Element) {
-        array.append (value: Variant(value))
+    public final func append (value: T) {
+        array.append (value: value.toVariant())
     }
     
     /// Resizes the array to contain a different number of elements. If the array size is smaller, elements are cleared, if bigger, new elements are `null`. Returns ``GodotError/ok`` on success, or one of the other ``GodotError`` values if the operation failed.
@@ -120,8 +127,8 @@ public class VariantCollection<Element: VariantStorable>: Collection {
     ///
     /// > Note: On large arrays, this method will be slower if the inserted element is close to the beginning of the array (index 0). This is because all elements placed after the newly inserted element have to be reindexed.
     ///
-    public final func insert (position: Int64, value: Element)-> Int64 {
-        array.insert (position: position, value: Variant(value))
+    public final func insert (position: Int64, value: T)-> Int64 {
+        array.insert (position: position, value: value.toVariant())
     }
     
     /// Removes an element from the array by index. If the index does not exist in the array, nothing happens. To remove an element by searching for its value, use ``erase(value:)`` instead.
@@ -144,15 +151,15 @@ public class VariantCollection<Element: VariantStorable>: Collection {
     ///
     /// > Note: Do not erase entries while iterating over the array.
     ///
-    public final func erase (value: Element) {
-        array.erase (value: Variant(value))
+    public final func erase (value: T) {
+        array.erase (value: value.toVariant())
     }
     
     /// Returns the first element of the array. Prints an error and returns `null` if the array is empty.
     ///
     /// > Note: Calling this function is not the same as writing `array[0]`. If the array is empty, accessing by index will pause project execution when running from the editor.
     ///
-    public final func front ()-> Element {
+    public final func front ()-> T {
         toStrong (array.front ())
     }
     
@@ -160,42 +167,42 @@ public class VariantCollection<Element: VariantStorable>: Collection {
     ///
     /// > Note: Calling this function is not the same as writing `array[-1]`. If the array is empty, accessing by index will pause project execution when running from the editor.
     ///
-    public final func back ()-> Element {
+    public final func back ()-> T {
         toStrong (array.back ())
     }
     
     /// Returns a random value from the target array. Prints an error and returns `null` if the array is empty.
     ///
-    public final func pickRandom ()-> Element {
+    public final func pickRandom ()-> T {
         toStrong (array.pickRandom())
     }
 
     
     /// Searches the array for a value and returns its index or `-1` if not found. Optionally, the initial search index can be passed.
-    public final func find (what: Element, from: Int64 = 0)-> Int64 {
-        array.find (what: Variant(what), from: from)
+    public final func find (what: T, from: Int64 = 0)-> Int64 {
+        array.find (what: what.toVariant(), from: from)
     }
     
     /// Searches the array in reverse order. Optionally, a start search index can be passed. If negative, the start index is considered relative to the end of the array.
-    public final func rfind (what: Element, from: Int64 = -1)-> Int64 {
-        array.rfind (what: Variant(what), from: from)
+    public final func rfind (what: T, from: Int64 = -1)-> Int64 {
+        array.rfind (what: what.toVariant(), from: from)
     }
     
     /// Returns the number of times an element is in the array.
-    public final func count (value: Element)-> Int64 {
-        array.count (value: Variant(value))
+    public final func count (value: T)-> Int64 {
+        array.count (value: value.toVariant())
     }
     
     /// Returns `true` if the array contains the given value.
     ///
     /// > Note: This is equivalent to using the `in` operator as follows:
     ///
-    public final func has (value: Element)-> Bool {
-        array.has (value: Variant(value))
+    public final func has (value: T)-> Bool {
+        array.has (value: value.toVariant())
     }
     
     /// Removes and returns the last element of the array. Returns `null` if the array is empty, without printing an error message. See also ``popFront()``.
-    public final func popBack ()-> Element {
+    public final func popBack ()-> T {
         toStrong (array.popBack())
     }
     
@@ -203,7 +210,7 @@ public class VariantCollection<Element: VariantStorable>: Collection {
     ///
     /// > Note: On large arrays, this method is much slower than ``popBack()`` as it will reindex all the array's elements every time it's called. The larger the array, the slower ``popFront()`` will be.
     ///
-    public final func popFront ()-> Element {
+    public final func popFront ()-> T {
         toStrong (array.popFront())
     }
     
@@ -211,7 +218,7 @@ public class VariantCollection<Element: VariantStorable>: Collection {
     ///
     /// > Note: On large arrays, this method can be slower than ``popBack()`` as it will reindex the array's elements that are located after the removed element. The larger the array and the lower the index of the removed element, the slower ``popAt(position:)`` will be.
     ///
-    public final func popAt (position: Int64)-> Element {
+    public final func popAt (position: Int64)-> T {
         toStrong (array.popAt (position: position))
     }
     
@@ -246,16 +253,16 @@ public class VariantCollection<Element: VariantStorable>: Collection {
     ///
     /// > Note: Calling ``bsearch(value:before:)`` on an unsorted array results in unexpected behavior.
     ///
-    public final func bsearch (value: Element, before: Bool = true)-> Int64 {
-        array.bsearch(value: Variant(value), before: before)
+    public final func bsearch (value: T, before: Bool = true)-> Int64 {
+        array.bsearch(value: value.toVariant(), before: before)
     }
     
     /// Finds the index of an existing value (or the insertion index that maintains sorting order, if the value is not yet present in the array) using binary search and a custom comparison method. Optionally, a `before` specifier can be passed. If `false`, the returned index comes after all existing entries of the value in the array. The custom method receives two arguments (an element from the array and the value searched for) and must return `true` if the first argument is less than the second, and return `false` otherwise.
     ///
     /// > Note: Calling ``bsearchCustom(value:`func`:before:)`` on an unsorted array results in unexpected behavior.
     ///
-    public final func bsearchCustom (value: Element, `func`: Callable, before: Bool = true)-> Int64 {
-        array.bsearchCustom(value: Variant(value), func: `func`, before: before)
+    public final func bsearchCustom (value: T, `func`: Callable, before: Bool = true)-> Int64 {
+        array.bsearchCustom(value: value.toVariant(), func: `func`, before: before)
     }
     
     /// Reverses the order of the elements in the array.

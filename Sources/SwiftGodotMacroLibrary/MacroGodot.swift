@@ -41,27 +41,7 @@ class GodotMacroProcessor {
         propertyDeclarations [key] = name
         return name
     }
-    
-    
-    func classInitSignals(_ declSyntax: MacroExpansionDeclSyntax) throws {
-        guard declSyntax.macroName.tokenKind == .identifier("signal") else {
-            return
-        }
-        
-        guard let firstArg = declSyntax.arguments.first else {
-            return
-        }
-        
-        guard let signalName = firstArg.expression.signalName() else {
-            return
-        }
-        
-        ctor.append("classInfo.registerSignal(")
-        ctor.append("name: \(className).\(signalName.swiftName).name,")
-        ctor.append("arguments: \(className).\(signalName.swiftName).arguments")
-        ctor.append(")")
-    }
-    
+
     // Processes a function
     func processFunction (_ funcDecl: FunctionDeclSyntax) throws {
         guard hasCallableAttribute(funcDecl.attributes) else {
@@ -183,46 +163,23 @@ class GodotMacroProcessor {
     func processType () throws -> String {
         ctor =
     """
-    private static var _initializeClass: Void = {
+    static var _initClass: Void = {
         let className = StringName("\(className)")
         let classInfo = ClassInfo<\(className)> (name: className)\n
     """
         for member in classDecl.memberBlock.members.enumerated() {
             let decl = member.element.decl
-            // MacroExpansionDeclSyntax
-            if let funcDecl = FunctionDeclSyntax(decl) {
+            if let funcDecl = decl.as(FunctionDeclSyntax.self) {
                 try processFunction (funcDecl)
-            } else if let varDecl = VariableDeclSyntax(decl) {
+            }
+            else if let varDecl = decl.as (VariableDeclSyntax.self) {
                 try processVariable (varDecl)
-            } else if let macroDecl = MacroExpansionDeclSyntax(decl) {
-                try classInitSignals(macroDecl)
             }
         }
         ctor.append("} ()")
         return ctor
     }
 
-}
-
-extension String {
-    func camelCaseToSnakeCase() -> String {
-        let acronymPattern = "([A-Z]+)([A-Z][a-z]|[0-9])"
-        let normalPattern = "([a-z0-9])([A-Z])"
-        return processCamalCaseRegex(pattern: acronymPattern)?
-            .processCamalCaseRegex(pattern: normalPattern)?.lowercased() ?? lowercased()
-    }
-
-    fileprivate func processCamalCaseRegex(pattern: String) -> String? {
-        let regex = try? NSRegularExpression(pattern: pattern, options: [])
-        let range = NSRange(location: 0, length: count)
-        return regex?.stringByReplacingMatches(in: self, options: [], range: range, withTemplate: "$1_$2")
-    }
-}
-
-func camelToSnake(_ s: String) -> String {
-    s.camelCaseToSnakeCase()
-        .replacingOccurrences(of: "2_D", with: "2D").replacingOccurrences(of: "3_D", with: "3D")
-        .replacingOccurrences(of: "2_d", with: "2d").replacingOccurrences(of: "3_d", with: "3d")
 }
 
 ///
@@ -244,45 +201,15 @@ public struct GodotMacro: MemberMacro {
         
         let processor = GodotMacroProcessor(classDecl: classDecl)
         do {
-            let classInit = try processor.processType()
-
-            let isFinal = classDecl.modifiers
-                .map(\.name.tokenKind)
-                .contains(.keyword(.final))
-
-            let accessControlLevel = isFinal ? "public" : "open"
-
-            let classInitProperty = DeclSyntax(
-            """
-            override \(raw: accessControlLevel) class var classInitializer: Void {
-                let _ = super.classInitializer
-                return _initializeClass
+            let classInit = try processor.processType ()
+            let initRawHandleSyntax = try InitializerDeclSyntax("required init(nativeHandle _: UnsafeRawPointer)") {
+                StmtSyntax("\n\tfatalError(\"init(nativeHandle:) called, it is a sign that something is wrong, as these objects should not be re-hydrated\")")
             }
-            """
-            )
+            let initSyntax = try InitializerDeclSyntax("required init()") {
+                StmtSyntax("\n\t_ = \(classDecl.name)._initClass\n\tsuper.init ()")
+            }
             
-            var decls = [classInitProperty, DeclSyntax(stringLiteral: classInit)]
-
-            // Now look for overrides of Godot functions
-            let functions = classDecl.memberBlock.members
-                        .compactMap { $0.decl.as(FunctionDeclSyntax.self) }
-                        .filter { $0.name.text.starts(with: "_") }
-                        .filter { $0.modifiers.contains(where: { $0.name.text == "override" }) == true }
-            if functions.count > 0 {
-                let stringNames = functions.map { function in
-                    let functionName = function.name.text
-                    let stringName = "StringName(\"\(camelToSnake (functionName))\")" // TODO: convert to Godot naming convention
-                    return stringName
-                }
-                
-                var implementedOverridesDecl = "override \(accessControlLevel) class func implementedOverrides() -> [StringName] {\nsuper.implementedOverrides() + [\n"
-                for name in stringNames {
-                    implementedOverridesDecl.append("\t\(name),\n")
-                }
-                implementedOverridesDecl.append("]\n}")
-                decls.append (DeclSyntax(extendedGraphemeClusterLiteral: implementedOverridesDecl))
-            }
-            return decls
+            return [DeclSyntax (initRawHandleSyntax), DeclSyntax (initSyntax), DeclSyntax(stringLiteral: classInit)]
         } catch {
             let diagnostic: Diagnostic
             if let detail = error as? GodotMacroError {
@@ -306,7 +233,6 @@ struct godotMacrosPlugin: CompilerPlugin {
         NativeHandleDiscardingMacro.self,
         PickerNameProviderMacro.self,
         SceneTreeMacro.self,
-        Texture2DLiteralMacro.self,
-        SignalMacro.self
+        Texture2DLiteralMacro.self
     ]
 }

@@ -27,8 +27,8 @@ var products: [Product] = [
     .plugin(name: "CodeGeneratorPlugin", targets: ["CodeGeneratorPlugin"]),
 ]
 
-// Macros aren't supported on Windows before 5.9.1 and this sample uses them
-#if !(os(Windows) && swift(<5.9.1))
+// Macros aren't supported on Windows yet and this sample uses them
+#if !os(Windows)
 products.append(
     .library(
         name: "SimpleExtension",
@@ -74,8 +74,8 @@ var targets: [Target] = [
 
 var swiftGodotPlugins: [Target.PluginUsage] = ["CodeGeneratorPlugin"]
 
-// Macros aren't supported on Windows before 5.9.1
-#if !(os(Windows) && swift(<5.9.1))
+// Macros aren't supported on Windows yet
+#if !os(Windows)
 targets.append(contentsOf: [
     // These are macros that can be used by third parties to simplify their
     // SwiftGodot development experience, these are used at compile time by
@@ -113,15 +113,14 @@ targets.append(contentsOf: [
         //linkerSettings: linkerSettings,
         plugins: swiftGodotPlugins),
     
-    // General purpose cross-platform tests
+    // General purpose tests
     .testTarget(
-        name: "SwiftGodotUniversalTests",
+        name: "SwiftGodotTests",
         dependencies: [
             "SwiftGodot",
             "ExtensionApi",
             "ExtensionApiJson",
-        ]
-    ),
+        ])
 ])
 
 let package = Package(
@@ -132,6 +131,7 @@ let package = Package(
     ],
     products: products,
     dependencies: [
+        // Dependencies declare other packages that this package depends on.
         .package(url: "https://github.com/CoreOffice/XMLCoder", from: "0.15.0"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-syntax.git", from: "509.0.0"),
