@@ -19,6 +19,12 @@ Generator.
 
 https://user-images.githubusercontent.com/36863/232163186-dc7c0290-71db-49f2-b812-c775c55b8b77.mov
 
+# Why SwiftGodot?
+
+* No game stutters caused by GC, unlike C#.
+
+* Learn more: [Swift Godot: Fixing the Multi-million dollar mistake](https://www.youtube.com/watch?v=tzt36EGKEZo)
+
 # Consuming SwiftGodot
 
 There are two ways of consuming SwiftGodot, you can either reference
@@ -76,15 +82,7 @@ let package = Package(
     targets: [
         .target(
             name: "MyFirstGame",
-            dependencies: ["SwiftGodot"],
-            swiftSettings: [.unsafeFlags(["-suppress-warnings"])],
-            linkerSettings: [.unsafeFlags(
-                ["-Xlinker", "-undefined",
-                 "-Xlinker", "dynamic_lookup"]
-            )]
-        )
-		            
-    ]
+            dependencies: ["SwiftGodot"])]
 )
 ```
 
@@ -163,6 +161,7 @@ You would create something like this in a file called
 ```yml
 [configuration]
 entry_symbol = "swift_entry_point"
+compatibility_minimum = 4.1
 
 [libraries]
 macos.debug = "res://bin/MyFirstGame"
@@ -205,3 +204,7 @@ and then finding it in the hierarchy.
 
 In our example above, it would appear under Node3D, as it
 is a Node3D subclass.
+
+## Community
+
+Join the community on [Slack](https://join.slack.com/t/swiftongodot/shared_invite/zt-26brq65x2-t8SLjm_Z6a7FJH17CmHevA)

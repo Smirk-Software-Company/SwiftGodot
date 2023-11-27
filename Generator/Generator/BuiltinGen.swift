@@ -11,36 +11,50 @@ import ExtensionApi
 /// Given an initializer of the form "Vector (0, 1, 0)" returns a proper Swift "Vector (x: 0, y: 1, z: 0)" value
 ///
 func getInitializer (_ bc: JGodotBuiltinClass, _ val: String) -> String? {
-    if let pstart = val.firstIndex(of: "("), let pend = val.lastIndex(of: ")"){
-        let va = val [val.index(pstart, offsetBy: 1)..<pend]
-        let splitArgs: [Substring.SubSequence]
-        if #available(iOS 16.0, *) {
-            splitArgs = va.split(separator: ", ")
-        } else {
-            fatalError ("This requires a modern MacOS to build")
-        }
-        // Find a constructor with that number of arguments
-        for constructor in bc.constructors {
-            
-            if constructor.arguments?.count ?? -1 == splitArgs.count {
-                // Found
-                var prefixedArgs = ""
-                for i in 0..<splitArgs.count {
-                    if prefixedArgs.count != 0 { prefixedArgs += ", "}
-                    let name = constructor.arguments! [i].name
-                    var pval = splitArgs [i]
-
-                    // Some Godot constants leak into the initializers
-                    if pval.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) == "inf" {
-                        pval = "Float.infinity"[...]
+    if #available(iOS 16.0, *) {
+        if let pstart = val.firstIndex(of: "("), let pend = val.lastIndex(of: ")"){
+            let splitArgs = val [val.index(pstart, offsetBy: 1)..<pend].split(separator: ", ")
+            // Find a constructor with that number of arguments
+            for constructor in bc.constructors {
+                
+                if constructor.arguments?.count ?? -1 == splitArgs.count {
+                    // Found
+                    var prefixedArgs = ""
+                    for i in 0..<splitArgs.count {
+                        if prefixedArgs.count != 0 { prefixedArgs += ", "}
+                        let name = constructor.arguments! [i].name
+                        var pval = splitArgs [i]
+                        
+                        // Some Godot constants leak into the initializers
+                        if pval.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) == "inf" {
+                            pval = "Float.infinity"[...]
+                        }
+                        
+                        prefixedArgs = prefixedArgs + name + ": " + pval
                     }
-
-                    prefixedArgs = prefixedArgs + name + ": " + pval
+                    return String (val [val.startIndex..<pstart]) + " (" + prefixedArgs + ")"
                 }
-                return String (val [val.startIndex..<pstart]) + " (" + prefixedArgs + ")"
             }
+            
+            // Fallback for missing constructors
+            let format: String?
+            switch (bc.name, splitArgs.count) {
+            case ("Transform2D", 6):
+                format = "Transform2D (xAxis: Vector2 (x: %@, y: %@), yAxis: Vector2 (x: %@, y: %@), origin: Vector2 (x: %@, y: %@))"
+            case ("Basis", 9):
+                format = "Basis (xAxis: Vector3 (x: %@, y: %@, z: %@), yAxis: Vector3 (x: %@, y: %@, z: %@), zAxis: Vector3 (x: %@, y: %@, z: %@))"
+            case ("Transform3D", 12):
+                format = "Transform3D (basis: Basis (xAxis: Vector3 (x: %@, y: %@, z: %@), yAxis: Vector3 (x: %@, y: %@, z: %@), zAxis: Vector3 (x: %@, y: %@, z: %@)), origin: Vector3(x: %@, y: %@, z: %@))"
+            case ("Projection", 16):
+                format = "Projection (xAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), yAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), zAxis: Vector4 (x: %@, y: %@, z: %@, w: %@), wAxis: Vector4 (x: %@, y: %@, z: %@, w: %@))"
+            default:
+                format = nil
+            }
+            if let format {
+                return String (format: format, arguments: splitArgs.map (String.init))
+            }
+            return nil
         }
-        return nil
     }
     return val
 }
@@ -61,6 +75,7 @@ func generateBuiltinConstants (_ p: Printer,
     for constant in constants {
         // Check if we need to inject parameter names
         guard let val = getInitializer (bc, constant.value) else {
+            print ("Generator: no constructor matching constant \(bc.name).\(constant.name) = \(constant.value)")
             continue
         }
         
@@ -86,11 +101,6 @@ func generateBuiltinCtors (_ p: Printer,
         var args = ""
         var visibility = "public"
         
-        if godotTypeName.starts(with: "Vector") && m.arguments?.count ?? 0 == 0 {
-            // Do not expose the empty constructors to the world, they are kind of useless
-            // but the generator references them to initialize values
-            visibility = ""
-        }
         let ptrName = "constructor\(m.index)"
         p ("static var \(ptrName): GDExtensionPtrConstructor = gi.variant_get_ptr_constructor (\(typeEnum), \(m.index))!\n")
         
@@ -118,6 +128,12 @@ func generateBuiltinCtors (_ p: Printer,
                 }
             }
         }
+        if args == "" {
+            if !isStruct {
+                visibility.append(" required")
+            }
+        }
+        
         p ("\(visibility) init (\(args))") {
             // Determine if we have a constructors whose sole job is to initialize the members
             // of the struct, in that case, just do that, do not call into Godot.
@@ -457,7 +473,7 @@ func generateBuiltinClasses (values: [JGodotBuiltinClass], outputDir: String?) a
                 conformances.append ("Equatable")
             }
         }
-        conformances.append ("GodotVariant")
+
         if bc.name == "String" || bc.name == "StringName" || bc.name == "NodePath" {
             conformances.append ("ExpressibleByStringLiteral")
         }
@@ -531,20 +547,15 @@ func generateBuiltinClasses (values: [JGodotBuiltinClass], outputDir: String?) a
                     }
                 }
             }
-            
-//            p ("public static var variantType: Variant.GType") {
-//                p (".\(snakeToCamel (bc.name))")
-//            }
-            
 
             if kind == .isClass {
                 let (storage, initialize) = getBuiltinStorage (bc.name)
                 p ("// Contains a binary blob where this type information is stored")
-                p ("var content: ContentType\(initialize)")
+                p ("public var content: ContentType\(initialize)")
                 p ("// Used to initialize empty types")
-                p ("static let zero: ContentType \(initialize)")
+                p ("public static let zero: ContentType \(initialize)")
                 p ("// Convenience type that matches the build configuration storage needs")
-                p ("typealias ContentType = \(storage)")
+                p ("public typealias ContentType = \(storage)")
                 builtinClassStorage [bc.name] = storage
                 // TODO: This is a little brittle, because I am
                 // hardcoding the constructor1 here, it should
@@ -552,7 +563,7 @@ func generateBuiltinClasses (values: [JGodotBuiltinClass], outputDir: String?) a
                 // directly to be the one that takes the same
                 // parameter
                 p ("// Used to construct objects on virtual proxies")
-                p ("init (content: \(storage))") {
+                p ("public required init (content: ContentType)") {
                     p ("var copy = content")
                     p ("var args: [UnsafeRawPointer?] = []")
                     p ("withUnsafePointer (to: &copy)", arg: " ptr in") {
@@ -561,39 +572,7 @@ func generateBuiltinClasses (values: [JGodotBuiltinClass], outputDir: String?) a
                     }
                 }
             }
-            
-            p ("/// Creates a new instance from the given variant if it contains a \(typeName)")
-            let gtype = gtypeFromTypeName (bc.name)
-            // Now generate the variant constructor
-            if kind == .isClass {
-                p ("public required init? (_ from: Variant)") {
-                    p ("guard from.gtype == .\(gtype) else") {
-                        p ("return nil")
-                    }
-                    p ("var localContent: \(typeName).ContentType = \(typeName).zero")
-                    p ("from.toType(.\(gtype), dest: &localContent)")
-                    p ("// Replicate the constructor, because of a lame Swift requirement")
-                    p ("var args: [UnsafeRawPointer?] = []")
-                    p ("withUnsafePointer (to: &localContent)", arg: " ptr in") {
-                        p ("args.append (ptr)")
-                        p ("\(typeName).constructor1 (&content, &args)")
-                    }
-                }
-            } else {
-                p ("public init? (_ from: Variant)") {
-                    p ("guard from.gtype == .\(gtype) else") {
-                        p ("return nil")
-                    }
-                    p ("var v = \(bc.name)()")
-                    p ("from.toType(.\(gtype), dest: &v)")
-                    p ("self.init (from: v)")
-                }                
-            }
-            p ("/// Wraps this \(typeName) into a Variant")
-            p ("public func toVariant () -> Variant ") {
-                p ("Variant (self)")
-            }
-            
+           
             let mdocs = docClass?.members
             func memberDoc (_ name: String)  {
                 for md in mdocs?.member ?? [] {
