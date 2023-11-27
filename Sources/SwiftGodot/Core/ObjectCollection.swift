@@ -18,7 +18,6 @@ public class ObjectCollection<T:Object>: Collection {
     
     init (content: Int64) {
         array = GArray (content: content)
-        initType()
     }
     
     func initType () {
