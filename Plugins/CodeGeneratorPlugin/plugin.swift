@@ -82,7 +82,7 @@ let knownBuiltin = [
     "Vector4.swift",
     "Vector4i.swift",
     "core-defs.swift",
-    "utility.swift"
+    "utility.swift",
 ]
 
 let known = [
@@ -335,7 +335,6 @@ let known = [
     "Font.swift",
     "FontFile.swift",
     "FontVariation.swift",
-    "FramebufferCacheRD.swift",
     "GDExtension.swift",
     "GDExtensionManager.swift",
     "GDScript.swift",
@@ -802,7 +801,6 @@ let known = [
     "UPNP.swift",
     "UPNPDevice.swift",
     "UndoRedo.swift",
-    "UniformSetCacheRD.swift",
     "VBoxContainer.swift",
     "VFlowContainer.swift",
     "VScrollBar.swift",
@@ -884,6 +882,7 @@ let known = [
     "VisualShaderNodeWorldPositionFromDepth.swift",
     "VisualShaderNodeRemap.swift",
     "VisualShaderNodeResizableBase.swift",
+    "VisualShaderNodeRotationByAxis.swift",
     "VisualShaderNodeSDFRaymarch.swift",
     "VisualShaderNodeSDFToScreenUV.swift",
     "VisualShaderNodeSample3D.swift",
@@ -932,6 +931,7 @@ let known = [
     "VisualShaderNodeVectorLen.swift",
     "VisualShaderNodeVectorOp.swift",
     "VisualShaderNodeVectorRefract.swift",
+    "VisualShaderNodeWorldPositionFromDepth.swift",
     "VoxelGI.swift",
     "VoxelGIData.swift",
     "WeakRef.swift",
@@ -964,5 +964,4 @@ let known = [
     "XRServer.swift",
     "ZIPPacker.swift",
     "ZIPReader.swift",
-
 ]

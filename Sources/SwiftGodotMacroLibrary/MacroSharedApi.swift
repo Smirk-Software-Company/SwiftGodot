@@ -31,6 +31,8 @@ enum GodotMacroError: Error, DiagnosticMessage {
     case requiresClass
     case requiresVar
     case requiresFunction
+    case requiresGArrayCollection
+    case requiresNonOptionalGArrayCollection
     case noVariablesFound
     case noTypeFound(VariableDeclSyntax)
     case unsupportedType(VariableDeclSyntax)
@@ -59,7 +61,11 @@ enum GodotMacroError: Error, DiagnosticMessage {
             "@Export expected an identifier, instead got \(e)"
         case .unknownError(let e):
             "Unknown nested error processing this directive: \(e)"
-        }
+        case .requiresGArrayCollection:
+            "@Export attribute can not be applied to Array types, use a VariantCollection, or an ObjectCollection instead"
+        case .requiresNonOptionalGArrayCollection:
+            "@Export optional Collections are not supported"
+		}
     }
     
     var diagnosticID: MessageID {
@@ -127,6 +133,10 @@ func getTypeName (_ parameter: FunctionParameterSyntax) -> String? {
         return nil
     }
     return typeName
+}
+
+func getParamName(_ parameter: FunctionParameterSyntax) -> String {
+    parameter.secondName?.text ?? parameter.firstName.text
 }
 
 var godotVariants = [

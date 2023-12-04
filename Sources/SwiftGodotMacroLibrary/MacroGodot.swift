@@ -26,7 +26,7 @@ class GodotMacroProcessor {
     }
     
     var propertyDeclarations: [String: String] = [:]
-    func lookupProp (parameterTypeName: String, parameterName: String) -> String {
+    func lookupPropParam (parameterTypeName: String, parameterName: String) -> String {
         let key = "\(parameterTypeName)/\(parameterName)"
         if let v = propertyDeclarations [key] {
             return v
@@ -37,7 +37,23 @@ class GodotMacroProcessor {
         
         // TODO: perhaps for these prop infos that are parameters to functions, we should not bother making them unique
         // and instead share all the Ints, all the Floats and so on.
-        ctor.append ("\tlet \(name) = PropInfo (propertyType: \(propType), propertyName: \"\(parameterName)\(parameterTypeName)\", className: className, hint: .none, hintStr: \"\", usage: .default)\n")
+        ctor.append ("\tlet \(name) = PropInfo (propertyType: \(propType), propertyName: \"\(parameterName)\", className: StringName(\"\(propType == ".object" ? parameterTypeName : "")\"), hint: .none, hintStr: \"\", usage: .default)\n")
+        propertyDeclarations [key] = name
+        return name
+    }
+
+    func lookupPropReturn (parameterTypeName: String, parameterName: String) -> String {
+        let key = "\(parameterTypeName)/\(parameterName)"
+        if let v = propertyDeclarations [key] {
+            return v
+        }
+        let propType = godotTypeToProp (typeName: parameterTypeName)
+        
+        let name = "prop_\(propertyDeclarations.count)"
+        
+        // TODO: perhaps for these prop infos that are parameters to functions, we should not bother making them unique
+        // and instead share all the Ints, all the Floats and so on.
+        ctor.append ("\tlet \(name) = PropInfo (propertyType: \(propType), propertyName: \"\", className: StringName(\"\(propType == ".object" ? parameterTypeName : "")\"), hint: .none, hintStr: \"\", usage: .default)\n")
         propertyDeclarations [key] = name
         return name
     }
@@ -71,14 +87,15 @@ class GodotMacroProcessor {
         var funcArgs = ""
         var retProp: String? = nil
         if let (retType, _) = getIdentifier (funcDecl.signature.returnClause?.type) {
-            retProp = lookupProp(parameterTypeName: retType, parameterName: "")
+            retProp = lookupPropReturn(parameterTypeName: retType, parameterName: "")
         }
 
         for parameter in funcDecl.signature.parameterClause.parameters {
             guard let ptype = getTypeName(parameter) else {
                 throw MacroError.typeName (parameter)
             }
-            let propInfo = lookupProp (parameterTypeName: ptype, parameterName: "")
+            let pname = getParamName(parameter)
+            let propInfo = lookupPropParam (parameterTypeName: ptype, parameterName: pname)
             if funcArgs == "" {
                 funcArgs = "\tlet \(funcName)Args = [\n"
             }
@@ -88,7 +105,7 @@ class GodotMacroProcessor {
             funcArgs.append ("\t]\n")
         }
         ctor.append (funcArgs)
-        ctor.append ("\tclassInfo.registerMethod(name: StringName(\"\(funcName)\"), flags: .default, returnValue: \(retProp ?? "nil"), arguments: \(funcArgs == "" ? "[]" : "\(funcName)Args"), function: \(className)._mproxy_\(funcName))")
+        ctor.append ("\tclassInfo.registerMethod(name: StringName(\"\(funcName)\"), flags: .default, returnValue: \(retProp ?? "nil"), arguments: \(funcArgs == "" ? "[]" : "\(funcName)Args"), function: \(className)._mproxy_\(funcName))\n")
     }
     
     func processVariable (_ varDecl: VariableDeclSyntax) throws {
@@ -103,6 +120,9 @@ class GodotMacroProcessor {
         }
         if let optSyntax = type.as (OptionalTypeSyntax.self) {
             type = optSyntax.wrappedType
+        }
+        guard varDecl.isArray == false else {
+            throw GodotMacroError.requiresGArrayCollection
         }
         guard let typeName = type.as (IdentifierTypeSyntax.self)?.name.text else {
             throw GodotMacroError.unsupportedType(varDecl)
@@ -173,7 +193,106 @@ class GodotMacroProcessor {
             
             ctor.append("\tclassInfo.registerMethod (name: \"\(getterName)\", flags: .default, returnValue: \(pinfo), arguments: [], function: \(className).\(getterName))\n")
             ctor.append("\tclassInfo.registerMethod (name: \"\(setterName)\", flags: .default, returnValue: nil, arguments: [\(pinfo)], function: \(className).\(setterName))\n")
-            ctor.append("\tclassInfo.registerProperty (\(pinfo), getter: \"\(getterName)\", setter: \"\(setterName)\")")
+            ctor.append("\tclassInfo.registerProperty (\(pinfo), getter: \"\(getterName)\", setter: \"\(setterName)\")\n")
+        }
+    }
+    
+    func processGArrayCollectionVariable(_ varDecl: VariableDeclSyntax) throws {
+        guard hasExportAttribute(varDecl.attributes) else {
+            return
+        }
+        guard let last = varDecl.bindings.last else {
+            throw GodotMacroError.noVariablesFound
+        }
+        
+        guard let type = last.typeAnnotation?.type else {
+            throw GodotMacroError.noTypeFound(varDecl)
+        }
+        
+        guard !type.is (OptionalTypeSyntax.self) else {
+            throw GodotMacroError.requiresNonOptionalGArrayCollection
+        }
+        
+        guard let elementTypeName = varDecl.gArrayCollectionElementTypeName else {
+            return
+        }
+        
+        let exportAttr = varDecl.attributes.first?.as(AttributeSyntax.self)
+        let lel = exportAttr?.arguments?.as(LabeledExprListSyntax.self)
+        let f = lel?.first?.expression.as(MemberAccessExprSyntax.self)?.declName
+        
+        let s = lel?.dropFirst().first
+        
+        for singleVar in varDecl.bindings {
+            guard let ips = singleVar.pattern.as(IdentifierPatternSyntax.self) else {
+                throw GodotMacroError.expectedIdentifier(singleVar)
+            }
+            let varName = ips.identifier.text
+            
+            let proxySetterName = "_mproxy_set_\(varName)"
+            let proxyGetterName = "_mproxy_get_\(varName)"
+            let setterName = "set_\(varName.camelCaseToSnakeCase())"
+            let getterName = "get_\(varName.camelCaseToSnakeCase())"
+            
+            if let accessors = last.accessorBlock {
+                if accessors.as (CodeBlockSyntax.self) != nil {
+                    throw MacroError.propertyGetSet
+                }
+                if let block = accessors.as (AccessorBlockSyntax.self) {
+                    var hasSet = false
+                    var hasGet = false
+                    switch block.accessors {
+                    case .accessors(let list):
+                        for accessor in list {
+                            switch accessor.accessorSpecifier.tokenKind {
+                            case .keyword(let val):
+                                switch val {
+                                case .didSet, .willSet:
+                                    hasSet = true
+                                    hasGet = true
+                                case .set:
+                                    hasSet = true
+                                case .get:
+                                    hasGet = true
+                                default:
+                                    break
+                                }
+                            default:
+                                break
+                            }
+                        }
+                    default:
+                        throw MacroError.propertyGetSet
+                    }
+                    
+                    if hasSet == false || hasGet == false {
+                        throw MacroError.propertyGetSet
+                    }
+                }
+            }
+            let pinfo = "_p\(varName)"
+            let godotArrayElementTypeName: String
+            if let gType = godotVariants[elementTypeName], let fromGType = godotArrayElementType(gType: gType) {
+                godotArrayElementTypeName = fromGType
+            } else {
+                godotArrayElementTypeName = elementTypeName
+            }
+            
+            let godotArrayTypeName = "Array[\(godotArrayElementTypeName)]"
+            ctor.append (
+    """
+    let \(pinfo) = PropInfo (
+        propertyType: \(godotTypeToProp(typeName: "Array")),
+        propertyName: "\(varName.camelCaseToSnakeCase())",
+        className: StringName("\(godotArrayTypeName)"),
+        hint: .\(f?.description ?? "none"),
+        hintStr: \(s?.description ?? "\"Array of \(elementTypeName)\""),
+        usage: .default)\n
+    """)
+            
+            ctor.append("\tclassInfo.registerMethod (name: \"\(getterName)\", flags: .default, returnValue: \(pinfo), arguments: [], function: \(className).\(proxyGetterName))\n")
+            ctor.append("\tclassInfo.registerMethod (name: \"\(setterName)\", flags: .default, returnValue: nil, arguments: [\(pinfo)], function: \(className).\(proxySetterName))\n")
+            ctor.append("\tclassInfo.registerProperty (\(pinfo), getter: \"\(getterName)\", setter: \"\(setterName)\")\n")
         }
     }
     
@@ -185,23 +304,71 @@ class GodotMacroProcessor {
     """
     private static var _initializeClass: Void = {
         let className = StringName("\(className)")
+        assert(ClassDB.classExists(class: className))
         let classInfo = ClassInfo<\(className)> (name: className)\n
     """
         for member in classDecl.memberBlock.members.enumerated() {
             let decl = member.element.decl
             // MacroExpansionDeclSyntax
-            if let funcDecl = FunctionDeclSyntax(decl) {
-                try processFunction (funcDecl)
-            } else if let varDecl = VariableDeclSyntax(decl) {
-                try processVariable (varDecl)
+			if let funcDecl = FunctionDeclSyntax(decl) {
+				try processFunction (funcDecl)
+			} else if let varDecl = VariableDeclSyntax(decl) {
+				if varDecl.isGArrayCollection {
+					try processGArrayCollectionVariable(varDecl)
+				} else {
+					try processVariable(varDecl)
+				}
             } else if let macroDecl = MacroExpansionDeclSyntax(decl) {
                 try classInitSignals(macroDecl)
             }
         }
-        ctor.append("} ()")
+        ctor.append("} ()\n")
         return ctor
     }
 
+}
+
+private func godotArrayElementType(gType: String) -> String? {
+    let map: [String: String] = [
+        ".bool": "bool",
+        ".int": "int",
+        ".float": "float",
+        ".string": "String",
+        ".vector2": "Vector2",
+        ".vector2i": "Vector2i",
+        ".rect2": "Rect2",
+        ".rect2i": "Rect2i",
+        ".vector3": "Vector3",
+        ".vector3i": "Vector3i",
+        ".transform2d": "Transform2D",
+        ".vector4": "Vector4",
+        ".vector4i": "Vector4i",
+        ".plane": "Plane",
+        ".quaternion": "Quaternion",
+        ".aabb": "AABB",
+        ".basis": "Basis",
+        ".transform3d": "Transform3D",
+        ".projection": "Projection",
+        ".color": "Color",
+        ".stringName": "StringName",
+        ".nodePath": "NodePath",
+        ".rid": "RID",
+        ".object": "Object",
+        ".callable": "Callable",
+        ".signal": "Signal",
+        ".dictionary": "Dictionary",
+        ".array": "Array",
+        ".packedByteArray": "PackedByteArray",
+        ".packedInt32Array": "PackedInt32Array",
+        ".packedInt64Array": "PackedInt64Array",
+        ".packedFloat32Array": "PackedFloat32Array",
+        ".packedFloat64Array": "PackedFloat64Array",
+        ".packedStringArray": "PackedStringArray",
+        ".packedVector2Array": "PackedVector2Array",
+        ".packedVector3Array": "PackedVector3Array",
+        ".packedColorArray": "PackedColorArray",
+    ]
+    return map[gType]
 }
 
 extension String {
