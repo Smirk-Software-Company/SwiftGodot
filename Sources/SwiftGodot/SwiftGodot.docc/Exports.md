@@ -1,13 +1,17 @@
 # Exports
 
-In Godot, class members can be exported. This means their value gets saved along with the 
-resource (such as the scene) they're attached to. They will also be available for editing in 
-the property editor. Exporting is done by using the @export annotation.
+In Godot, class members can be exported. This means their value gets saved along
+with the resource (such as the scene) they're attached to. They will also be
+available for editing in the property editor. Exporting is done by using the
+@Export annotation.
+
+This document deals with exporting properties, for information about exposing
+functions to the Godot world, see the <doc:CustomTypes> document.
 
 ## Introduction to Exports
 
-The simplest way of exporting a variable is to annotate it with the `@Export` attribute, like
-this:
+The simplest way of exporting a variable is to annotate it with the `@Export`
+attribute, like this:
 
 ```swift
 import SwiftGodot
@@ -20,16 +24,18 @@ public class ExportExample: Node3D
 }
 ```
 
-In that example the value 5 will be saved, and after building the current project it will be 
-visible in the property editor.
+In that example the value 5 will be saved, and after building the current
+project it will be visible in the property editor.
 
-One of the fundamental benefits of exporting member variables is to have them visible and 
-editable in the editor. This way, artists and game designers can modify values that later 
-influence how the program runs. For this, a special export syntax is provided.
+One of the fundamental benefits of exporting member variables is to have them
+visible and editable in the editor. This way, artists and game designers can
+modify values that later influence how the program runs. For this, a special export syntax is provided.
 
-Exporting can only be applied to ``Variant``-compatible types.  The Godot core-structures and classes, 
-as well as objects that subclass ``GodotObject``.
+Exporting can only be applied to ``Variant``-compatible types.  The Godot
+core-structures and classes, as well as objects that subclass ``GodotObject``.
 
+The `@Export` macro only works in your class definition, and will not work
+on Swift class extensions.
 
 ### Basic Usage
 
@@ -79,6 +85,34 @@ public var node: Node {
     } 
 }
 ```
+
+### Grouping Exports
+
+It is possible to group your exported properties inside the Godot Inspector with
+the #exportGroup macro. Every exported property after this annotation will be
+added to the group.  Start a new group or use #export_group ("") to break out.
+
+```swift
+#exportGroup("My Properties")
+@Export var number = 3
+```
+
+You can also specifiy that only properties with a given prefix be grouped, like
+this:
+
+```swift
+#exportGroup("My Properties", prefix: "health")
+@Export var health_reload_speed = 3
+```
+
+Groups cannot be nested, use #exportSubgroup to create subgroups within a group.
+
+```swift
+#exportSubgroup("Extra Properties")
+#export var string = ""
+#export var flag = false
+```
+
 
 ### Customizing the Exported Value
 
@@ -235,5 +269,11 @@ Custom resource classes can also be used, see Swift global classes.
 It must be noted that even if the script is not being run while in the editor, the exported 
 properties are still editable. This can be used in conjunction with a script in "tool" mode.
 
+### Arrays
 
+To surface arrays in Godot, use a strong type for it, for example:
 
+```
+@Export
+var myResources: VariantCollection<Resource>
+```

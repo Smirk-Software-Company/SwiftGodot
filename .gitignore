@@ -11,3 +11,5 @@ DerivedData/
 .netrc
 *~
 Package.resolved
+build-docs.log
+.nova/

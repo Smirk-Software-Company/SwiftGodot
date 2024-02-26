@@ -7,6 +7,11 @@
 
 @_implementationOnly import GDExtension
 
+/// If your application is crashing due to the Variant leak fixes, please
+/// enable this flag, and provide me with a test case, so I can find that
+/// pesky scenario.
+public var experimentalDisableVariantUnref = false
+
 /// Variant objects box various Godot Objects, you create them with one of the
 /// constructors, and you can retrieve the contents using the various extension
 /// constructors that are declared on the various types that are wrapped.
@@ -62,21 +67,30 @@ public class Variant: Hashable, Equatable, CustomDebugStringConvertible {
     var content: ContentType = (0, 0, 0)
     static var zero: ContentType = (0, 0, 0)
     
-    /// Initializes from the raw contents of another Variant
+    /// Initializes from the raw contents of another Variant, this will make a copy of the variant contents
     init (fromContent: ContentType) {
-        content = fromContent
+        var copy = fromContent
+        gi.variant_new_copy (&content, &copy)
     }
-    
+
+    /// Initializes from the raw contents of another Variant, this will make a copy of the variant contents
+    init (fromContentPtr: inout ContentType) {
+        gi.variant_new_copy (&content, &fromContentPtr)
+    }
+
     deinit {
-        //gi.variant_destroy (&content)
+        if experimentalDisableVariantUnref { return }
+        gi.variant_destroy (&content)
     }
     
+    /// Creates an empty Variant, that represents the Godot type `nil`
     public init () {
         withUnsafeMutablePointer(to: &content) { ptr in
             gi.variant_new_nil (ptr)
         }
     }
 
+    /// Compares two variants, does this by delegating the comparison to Godot
     public static func == (lhs: Variant, rhs: Variant) -> Bool {
         var valid = GDExtensionBool (0)
         let ret = Variant (false)
@@ -89,6 +103,7 @@ public class Variant: Hashable, Equatable, CustomDebugStringConvertible {
         hasher.combine(gi.variant_hash (&content))
     }
     
+    /// Creates a new Variant based on a copy of the reference variant passed in
     public init (_ other: Variant) {
         var copy = other.content
         withUnsafeMutablePointer(to: &content) { selfPtr in
@@ -102,56 +117,39 @@ public class Variant: Hashable, Equatable, CustomDebugStringConvertible {
         self.init(representable: value.toVariantRepresentable())
     }
     
-    convenience public init<T: VariantStorable>(
-        _ value: T
-    ) where T.Representable: ContentTypeStoring & VariantRepresentable {
-        self.init(representable: value.toVariantRepresentable())
-    }
-    
-    private init<T: VariantRepresentable>(representable value: T) where T: ContentTypeStoring {
-        let godotType = T.godotType
-        
-        var mutableValue: T.ContentType
-        mutableValue = value.content
-        
-        withUnsafeMutablePointer(to: &content) { selfPtr in
-            withUnsafeMutablePointer(to: &mutableValue) { ptr in
-                Variant.fromTypeMap [godotType.rawValue] (selfPtr, ptr)
-            }
-        }
-    }
-    
     private init<T: VariantRepresentable>(representable value: T) {
         let godotType = T.godotType
         
         withUnsafeMutablePointer(to: &content) { selfPtr in
-            if let object = value as? Object {
-                var mutableValue = object.handle
-                withUnsafeMutablePointer(to: &mutableValue) { ptr in
-                    Variant.fromTypeMap [godotType.rawValue] (selfPtr, ptr)
-                }
-            } else {
-                var mutableValue = value
-                withUnsafeMutablePointer(to: &mutableValue) { ptr in
-                    Variant.fromTypeMap [godotType.rawValue] (selfPtr, ptr)
-                }
+            var mutableValue = value.content
+            withUnsafeMutablePointer(to: &mutableValue) { ptr in
+                Variant.fromTypeMap [Int (godotType.rawValue)] (selfPtr, ptr)
             }
         }
     }
     
+    /// This describes the type of the data wrapped by this variant
     public var gtype: GType {
         var copy = content
-        return GType (rawValue: Int (gi.variant_get_type (&copy).rawValue)) ?? .nil
+        return GType (rawValue: Int64 (gi.variant_get_type (&copy).rawValue)) ?? .nil
     }
     
     func toType (_ type: GType, dest: UnsafeMutableRawPointer) {
         withUnsafeMutablePointer(to: &content) { selfPtr in
-            Variant.toTypeMap [type.rawValue] (dest, selfPtr)
+            Variant.toTypeMap [Int (type.rawValue)] (dest, selfPtr)
         }
     }
     
+    /// Returns true if the variant is flagged as being an object (`gtype == .object`) and it has a nil pointer.
+    public var isNull: Bool {
+        return asObject(Object.self) == nil
+    }
+    
     ///
-    /// Attempts to cast the Variant into a GodotObject, this requires that the Variant value be of type `.object`.
+    /// Attempts to cast the Variant into a GodotObject, if the variant contains a value of type `.object`, then
+    // this will return the object.  If the variant contains the nil value, or the content of the variant is not
+    /// a `.object, the value `nil` is returned.
+    ///
     /// - Parameter type: the desired type eg. `.asObject(Node.self)`
     /// - Returns: nil on error, or the type on success
     ///
@@ -161,7 +159,14 @@ public class Variant: Hashable, Equatable, CustomDebugStringConvertible {
         }
         var value: UnsafeRawPointer = UnsafeRawPointer(bitPattern: 1)!
         toType(.object, dest: &value)
+        if value == UnsafeRawPointer(bitPattern: 0) {
+            return nil
+        }
         let ret: T? = lookupObject(nativeHandle: value)
+        if let rc = ret as? RefCounted {
+            // When we pull out a refcounted out of a Variant, take a reference
+            rc.reference ()
+        }
         return ret
     }
     
@@ -176,5 +181,84 @@ public class Variant: Hashable, Equatable, CustomDebugStringConvertible {
     
     public var debugDescription: String {
         "\(gtype) [\(description)]"
+    }
+    
+    /// Invokes a variant's method by name.
+    /// - Parameters:
+    ///  - method: name of the method to invoke
+    ///  - arguments: variable list of arguments to pass to the method
+    /// - Returns: on success, the variant result, on error, the reason
+    public func call (method: StringName, _ arguments: Variant...) -> Result<Variant,CallErrorType> {
+        let copy_method = method
+        var _result: Variant.ContentType = Variant.zero
+        var _args: [UnsafeRawPointer?] = []
+        var copy_content = content
+        //return withUnsafePointer (to: &copy_method.content) { p0 in
+//            _args.append (p0)
+        
+        let content = UnsafeMutableBufferPointer<Variant.ContentType>.allocate(capacity: arguments.count)
+        defer { content.deallocate () }
+        for idx in 0..<arguments.count {
+            content [idx] = arguments [idx].content
+            _args.append (content.baseAddress! + idx)
+        }
+        var err = GDExtensionCallError ()
+        
+        gi.variant_call (&copy_content, &copy_method.content, &_args, Int64(_args.count), &_result, &err)
+        if err.error != GDEXTENSION_CALL_OK {
+            return .failure(toCallErrorType(err.error))
+        }
+        return .success(Variant (fromContent: _result))
+    }
+    
+    /// Errors raised by the variant subscript
+    ///
+    /// There are two possible error conditions, an attempt to use an indexer on a variant that is not
+    /// an array, or an attempt to access an element out bounds.
+    public enum VariantIndexerError: Error, CustomDebugStringConvertible {
+        case ok
+        /// The variant is not an array
+        case invalidOperation
+        /// The index is out of bounds
+        case outOfBounds
+        
+        public var debugDescription: String {
+            switch self {
+            case .ok:
+                return "Success"
+            case .invalidOperation:
+                return "Attempt to use indexer methods in a variant that does not support it"
+            case .outOfBounds:
+                return "Index value was out of bounds"
+            }
+        }
+    }
+    
+    /// Variants that represent arrays can be indexed, this subscript allows you to fetch the individual elements of those arrays
+    ///
+    public subscript (index: Int) -> Variant? {
+        get {
+            var copy_content = content
+            var _result: Variant.ContentType = Variant.zero
+            var valid: GDExtensionBool = 0
+            var oob: GDExtensionBool = 0
+            
+            gi.variant_get_indexed(&copy_content, Int64(index), &_result, &valid, &oob)
+            if valid == 0 || oob != 0 {
+                return nil
+            }
+            return Variant(fromContent: _result)
+        }
+        set {
+            guard let newValue else {
+                return
+            }
+            var copy_content = content
+            var newV = newValue.content
+            var valid: GDExtensionBool = 0
+            var oob: GDExtensionBool = 0
+
+            gi.variant_set_indexed (&copy_content, Int64(index), &newV, &valid, &oob)
+        }
     }
 }

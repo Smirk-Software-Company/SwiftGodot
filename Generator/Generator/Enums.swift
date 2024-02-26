@@ -37,14 +37,7 @@ func findEnumDef (name: String) -> JGodotGlobalEnumElement? {
     return nil
 }
 
-func generateEnums (_ p: Printer, cdef: JClassInfo?, values: [JGodotGlobalEnumElement], constantDocs: [DocConstant]? , prefix: String?) {
-    
-    var docEnumToValue: [String:String] = [:]
-    for d in constantDocs ?? [] {
-        docEnumToValue [d.name] = d.rest
-    }
-    //let classPrefix = cdef == nil ? "" : cdef!.name + "."
-    
+func generateEnums (_ p: Printer, cdef: JClassInfo?, values: [JGodotGlobalEnumElement], prefix: String?) {
     for enumDef in values {
         let isBitField = enumDef.isBitfield ?? false
         
@@ -66,9 +59,7 @@ func generateEnums (_ p: Printer, cdef: JClassInfo?, values: [JGodotGlobalEnumEl
                     }
 
                     let name = snakeToCamel(enumVal.name.dropPrefix(enumCasePrefix))
-                    if let ed = docEnumToValue [enumVal.name] {
-                        doc (p, cdef, ed)
-                    }
+                    doc (p, cdef, enumVal.description)
                     let optionName = escapeSwift (name)
                     optionNames.append(optionName)
                     p ("public static let \(optionName) = \(enumDef.name) (rawValue: \(enumVal.value))")
@@ -92,18 +83,25 @@ func generateEnums (_ p: Printer, cdef: JClassInfo?, values: [JGodotGlobalEnumEl
             p.indent += 1
             enumDefName = String (enumDefName.dropFirst("Variant.".count))
         }
-        p ("public enum \(getGodotType (SimpleType (type: enumDefName))): Int") {
+        let extraConformances = enumDefName == "Error" ? ", Error" : ""
+            
+        p ("public enum \(getGodotType (SimpleType (type: enumDefName))): Int64, CustomDebugStringConvertible\(extraConformances)") {
             var used = Set<Int> ()
             
-            for enumVal in enumDef.values {
+            func getName (_ enumVal: JGodotValueElement) -> String? {
                 let enumValName = enumVal.name
                 if enumDefName == "InlineAlignment" {
                     if enumValName == "INLINE_ALIGNMENT_TOP_TO" || enumValName == "INLINE_ALIGNMENT_TO_TOP" ||
                         enumValName == "INLINE_ALIGNMENT_IMAGE_MASK" || enumValName == "INLINE_ALIGNMENT_TEXT_MASK" {
-                        continue
+                        return nil
                     }
                 }
-                let name = snakeToCamel(enumVal.name.dropPrefix(enumCasePrefix))
+                return snakeToCamel(enumVal.name.dropPrefix(enumCasePrefix))
+            }
+            
+            var debugLines: [String] = []
+            for enumVal in enumDef.values {
+                guard let name = getName (enumVal) else { continue }
                 let prefix: String
                 if used.contains(enumVal.value) {
                     prefix = "// "
@@ -111,10 +109,26 @@ func generateEnums (_ p: Printer, cdef: JClassInfo?, values: [JGodotGlobalEnumEl
                     prefix = ""
                 }
                 used.insert(enumVal.value)
-                if let ed = docEnumToValue [enumValName] {
-                    doc (p, cdef, ed)
+                doc (p, cdef, enumVal.description)
+                let enumName = escapeSwift(name)
+                p ("\(prefix)case \(enumName) = \(enumVal.value) // \(enumVal.name)")
+
+                if prefix == "" {
+                    debugLines.append ("case .\(enumName): return \".\(enumName)\"")
                 }
-                p ("\(prefix)case \(escapeSwift(name)) = \(enumVal.value) // \(enumVal.name)")
+            }
+            
+            p ("/// A textual representation of this instance, suitable for debugging")
+            p ("public var debugDescription: String") {
+                p ("switch self") {
+                    for line in debugLines {
+                        p (line)
+                    }
+                }
+            }
+            if enumDefName == "Error" {
+                /// Provides the description of the error.
+                p ("public var localizedDescription: String { debugDescription }")
             }
         }
         if enumDef.name.starts (with: "Variant") {

@@ -14,6 +14,10 @@ var token: GDExtensionClassLibraryPtr! {
     return library
 }
 
+/// This variable is used to trigger a reloading of the method definitions in Godot, this is only needed
+/// for scenarios where SwiftGodot is being used with multiple active Godot runtimes in the same process
+public var swiftGodotLibraryGeneration: UInt16 = 0
+
 var extensionInitCallbacks: [((GDExtension.InitializationLevel)->())] = []
 var extensionDeInitCallbacks: [((GDExtension.InitializationLevel)->())] = []
 
@@ -37,8 +41,8 @@ public func setExtensionInterface (to: OpaquePointer?, library lib: OpaquePointe
 
 // Extension initialization callback
 func extension_initialize (userData: UnsafeMutableRawPointer?, l: GDExtensionInitializationLevel) {
-    print ("SWIFT: extension_initialize")
-    let level = GDExtension.InitializationLevel(rawValue: Int (exactly: l.rawValue)!)!
+    //print ("SWIFT: extension_initialize")
+    let level = GDExtension.InitializationLevel(rawValue: Int64 (exactly: l.rawValue)!)!
     
     for cb in extensionInitCallbacks {
         cb (level)
@@ -47,11 +51,47 @@ func extension_initialize (userData: UnsafeMutableRawPointer?, l: GDExtensionIni
 
 // Extension deinitialization callback
 func extension_deinitialize (userData: UnsafeMutableRawPointer?, l: GDExtensionInitializationLevel) {
-    print ("SWIFT: extension_deinitialize")
+    //print ("SWIFT: extension_deinitialize")
     
-    let level = GDExtension.InitializationLevel(rawValue: Int (exactly: l.rawValue)!)!
+    let level = GDExtension.InitializationLevel(rawValue: Int64 (exactly: l.rawValue)!)!
     for cb in extensionDeInitCallbacks {
         cb (level)
+    }
+}
+
+/// Error types returned by Godot when invoking a method
+public enum CallErrorType: Error {
+    /// No error
+    case ok
+    case invalidMethod
+    case invalidArgument
+    case tooFewArguments
+    case tooManyArguments
+    case instanceIsNull
+    case methodNotConst
+    
+    /// A new error was introduced into Godot, and the SwiftGodot bindings are out of sync
+    case unknown
+}
+
+func toCallErrorType (_ godotCallError: GDExtensionCallErrorType) -> CallErrorType {
+    switch godotCallError {
+    case GDEXTENSION_CALL_OK:
+        return .ok
+    case GDEXTENSION_CALL_ERROR_INVALID_METHOD:
+        return .invalidMethod
+    case GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT:
+        return .invalidArgument
+    case GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL:
+        return .instanceIsNull
+    case GDEXTENSION_CALL_ERROR_METHOD_NOT_CONST:
+        return .methodNotConst
+    case GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS:
+        return .tooFewArguments
+    case GDEXTENSION_CALL_ERROR_TOO_MANY_ARGUMENTS:
+        return .tooManyArguments
+    default:
+        return .unknown
     }
 }
 
@@ -80,16 +120,41 @@ struct GodotInterface {
     let classdb_register_extension_class_property_group: GDExtensionInterfaceClassdbRegisterExtensionClassPropertyGroup
     let classdb_register_extension_class_property_subgroup:
     GDExtensionInterfaceClassdbRegisterExtensionClassPropertySubgroup
-    
+    let classdb_unregister_extension_class: GDExtensionInterfaceClassdbUnregisterExtensionClass
+
     let object_set_instance: GDExtensionInterfaceObjectSetInstance
     let object_set_instance_binding: GDExtensionInterfaceObjectSetInstanceBinding
     let object_get_class_name: GDExtensionInterfaceObjectGetClassName
     
     let object_method_bind_ptrcall: GDExtensionInterfaceObjectMethodBindPtrcall
+    let object_destroy: GDExtensionInterfaceObjectDestroy
+    
+    // @convention(c) (GDExtensionMethodBindPtr?, GDExtensionObjectPtr?, UnsafePointer<GDExtensionConstTypePtr?>?, GDExtensionTypePtr?) -> Void
+    @inline(__always)
+    func object_method_bind_ptrcall_v(
+        _ method: GDExtensionMethodBindPtr?,
+        _ object: GDExtensionObjectPtr?,
+        _ result: GDExtensionTypePtr?,
+        _ _args: UnsafeMutableRawPointer?...
+    ) {
+        object_method_bind_ptrcall(method, object, unsafeBitCast(_args, to: [UnsafeRawPointer?].self), result)
+    }
     
     let global_get_singleton: GDExtensionInterfaceGlobalGetSingleton
     let ref_get_object: GDExtensionInterfaceRefGetObject
     let object_method_bind_call: GDExtensionInterfaceObjectMethodBindCall
+    
+    // @convention(c) (GDExtensionMethodBindPtr?, GDExtensionObjectPtr?, UnsafePointer<GDExtensionConstVariantPtr?>?, GDExtensionInt, GDExtensionUninitializedVariantPtr?, UnsafeMutablePointer<GDExtensionCallError>?) -> Void
+    @inline(__always)
+    func object_method_bind_call_v(
+        _ method: GDExtensionMethodBindPtr?,
+        _ object: GDExtensionObjectPtr?,
+        _ result: GDExtensionUninitializedVariantPtr?,
+        _ error: UnsafeMutablePointer<GDExtensionCallError>?,
+        _ _args: UnsafeMutableRawPointer?...
+    ) {
+        object_method_bind_call(method, object, unsafeBitCast(_args, to: [UnsafeRawPointer?].self), GDExtensionInt(_args.count), result, error)
+    }
     
     let variant_new_nil: GDExtensionInterfaceVariantNewNil
     let variant_new_copy: GDExtensionInterfaceVariantNewCopy
@@ -98,6 +163,10 @@ struct GodotInterface {
     let variant_destroy: GDExtensionInterfaceVariantDestroy
     let variant_get_type: GDExtensionInterfaceVariantGetType
     let variant_stringify: GDExtensionInterfaceVariantStringify
+    let variant_call: GDExtensionInterfaceVariantCall
+    let variant_call_static: GDExtensionInterfaceVariantCallStatic
+    let variant_get_indexed: GDExtensionInterfaceVariantGetIndexed
+    let variant_set_indexed: GDExtensionInterfaceVariantSetIndexed
     
     let variant_get_ptr_constructor: GDExtensionInterfaceVariantGetPtrConstructor
     let variant_get_ptr_builtin_method: GDExtensionInterfaceVariantGetPtrBuiltinMethod
@@ -105,6 +174,8 @@ struct GodotInterface {
     let variant_get_ptr_utility_function:
     GDExtensionInterfaceVariantGetPtrUtilityFunction
     let variant_get_ptr_destructor: GDExtensionInterfaceVariantGetPtrDestructor
+    let variant_get_ptr_indexed_getter: GDExtensionInterfaceVariantGetPtrIndexedGetter
+    let variant_get_ptr_indexed_setter: GDExtensionInterfaceVariantGetPtrIndexedSetter
     let variant_get_ptr_keyed_checker: GDExtensionInterfaceVariantGetPtrKeyedChecker
     let variant_get_ptr_keyed_getter: GDExtensionInterfaceVariantGetPtrKeyedGetter
     let variant_get_ptr_keyed_setter: GDExtensionInterfaceVariantGetPtrKeyedSetter
@@ -169,11 +240,14 @@ func loadGodotInterface (_ godotGetProcAddrPtr: GDExtensionInterfaceGetProcAddre
         classdb_register_extension_class_property: load ("classdb_register_extension_class_property"),
         classdb_register_extension_class_property_group: load ("classdb_register_extension_class_property_group"),
         classdb_register_extension_class_property_subgroup: load ("classdb_register_extension_class_property_subgroup"),
+        classdb_unregister_extension_class: load ("classdb_unregister_extension_class"),
         
         object_set_instance: load ("object_set_instance"),
         object_set_instance_binding: load ("object_set_instance_binding"),
         object_get_class_name: load ("object_get_class_name"),
         object_method_bind_ptrcall: load ("object_method_bind_ptrcall"),
+        object_destroy: load ("object_destroy"),
+        
         global_get_singleton: load ("global_get_singleton"),
         ref_get_object: load ("ref_get_object"),
         object_method_bind_call: load ("object_method_bind_call"),
@@ -185,12 +259,18 @@ func loadGodotInterface (_ godotGetProcAddrPtr: GDExtensionInterfaceGetProcAddre
         variant_destroy: load ("variant_destroy"),
         variant_get_type: load ("variant_get_type"),
         variant_stringify: load ("variant_stringify"),
+        variant_call: load ("variant_call"),
+        variant_call_static: load ("variant_call_static"),
+        variant_get_indexed: load ("variant_get_indexed"),
+        variant_set_indexed: load ("variant_set_indexed"),
 
         variant_get_ptr_constructor: load ("variant_get_ptr_constructor"),
         variant_get_ptr_builtin_method: load ("variant_get_ptr_builtin_method"),
         variant_get_ptr_operator_evaluator: load ("variant_get_ptr_operator_evaluator"),
         variant_get_ptr_utility_function: load ("variant_get_ptr_utility_function"),
         variant_get_ptr_destructor: load ("variant_get_ptr_destructor"),
+        variant_get_ptr_indexed_getter: load ("variant_get_ptr_indexed_getter"),
+        variant_get_ptr_indexed_setter: load ("variant_get_ptr_indexed_setter"),
         variant_get_ptr_keyed_checker: load ("variant_get_ptr_keyed_checker"),
         variant_get_ptr_keyed_getter: load ("variant_get_ptr_keyed_getter"),
         variant_get_ptr_keyed_setter: load ("variant_get_ptr_keyed_setter"),
@@ -269,12 +349,12 @@ public func initializeSwiftModule (
     if library == nil {
         library = GDExtensionClassLibraryPtr(libraryPtr)
     }
+    extensionInitCallbacks = [initHook]
+    extensionDeInitCallbacks = [deInitHook]
     let initialization = UnsafeMutablePointer<GDExtensionInitialization> (extensionPtr)
     initialization.pointee.deinitialize = extension_deinitialize
     initialization.pointee.initialize = extension_initialize
-    initialization.pointee.minimum_initialization_level = GDEXTENSION_INITIALIZATION_CORE
-    extensionInitCallbacks.append(initHook)
-    extensionDeInitCallbacks.append (deInitHook)
+    initialization.pointee.minimum_initialization_level = GDEXTENSION_INITIALIZATION_SCENE
 }
 
 /*
@@ -282,3 +362,7 @@ public func initializeSwiftModule (
  
  (aka '@convention(c) (GDExtensionVariantType, Int32) -> Optional<@convention(c) (Optional<UnsafeMutableRawPointer>, Optional<UnsafePointer<Optional<UnsafeRawPointer>>>) -> ()>')
  */
+
+func withArgPointers(_ _args: UnsafeMutableRawPointer?..., body: ([UnsafeRawPointer?]) -> Void) {
+    body(unsafeBitCast(_args, to: [UnsafeRawPointer?].self))
+}

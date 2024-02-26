@@ -10,13 +10,19 @@ to the game engine, or it can be used as an API with SwiftGodotKit
 which embeds Godot as an application that is driven directly from
 Swift.
 
+Tutorials and Documentation:
+
+* [Meet Swift Godot](https://migueldeicaza.github.io/SwiftGodotDocs/documentation/swiftgodot)
+* [SwiftGodot API Documentation](https://migueldeicaza.github.io/SwiftGodotDocs/documentation/swiftgodot/)
+* [Differences to GDScript](https://migueldeicaza.github.io/SwiftGodotDocs/documentation/swiftgodot/differences)
+* [Tutorials and walkthroughs](https://migueldeicaza.github.io/SwiftGodotDocs/tutorials/swiftgodot-tutorials/)
+
+Of interest to the community:
+* Running Godot in VisionPro using [GodotVision](https://github.com/kevinw/GodotVision)
+* Example Godot on Vision [GodotVisionExample](https://github.com/kevinw/GodotVisionExample)
+
 Driving Godot from Swift has the advantage that on MacOS you can
 debug your code from Xcode as well as the Godot code.
-
-You can [browse the API
-documentation](https://migueldeicaza.github.io/SwiftGodotDocs/documentation/swiftgodot/),
-and it can also be edited for local use, if you enable it in the
-Generator.
 
 https://user-images.githubusercontent.com/36863/232163186-dc7c0290-71db-49f2-b812-c775c55b8b77.mov
 
@@ -208,4 +214,5 @@ is a Node3D subclass.
 
 ## Community
 
-Join the community on [Slack](https://join.slack.com/t/swiftongodot/shared_invite/zt-26brq65x2-t8SLjm_Z6a7FJH17CmHevA)
+
+Join the community on [Slack](https://join.slack.com/t/swiftongodot/shared_invite/zt-2aqygohvb-stSRGEAN~c3awuMwtaqCAA)

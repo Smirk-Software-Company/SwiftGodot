@@ -10,11 +10,11 @@ import ExtensionApi
 
 var args = CommandLine.arguments
 
-let jsonFile = args.count > 1 ? args [1] : "/Users/miguel/cvs/godot-master/extension_api.json"
+let jsonFile = args.count > 1 ? args [1] : "/Users/miguel/cvs/SwiftGodot/Sources/ExtensionApi/extension_api.json"
 var generatorOutput = args.count > 2 ? args [2] : "/Users/miguel/cvs/SwiftGodot-DEBUG"
 var docRoot =  args.count > 3 ? args [3] : "/Users/miguel/cvs/godot-master/doc"
-
 let outputDir = args.count > 2 ? args [2] : generatorOutput
+let generateResettableCache = false 
 
 // IF we want a single file, or one file per type
 var singleFile = args.contains("--singlefile")
@@ -57,7 +57,6 @@ func dropMatchingPrefix (_ enumName: String, _ enumKey: String) -> String {
 var globalEnums: [String: JGodotGlobalEnumElement] = [:]
 
 print ("Running with projectDir=$(projectDir) and output=\(outputDir)")
-let globalDocs = loadClassDoc(base: docRoot, name:  "@GlobalScope")
 
 // Maps from a the class name to its definition
 var classMap: [String:JGodotExtensionAPIClass] = [:]
@@ -118,7 +117,7 @@ let semaphore = DispatchSemaphore(value: 0)
 let _ = Task {
     let coreDefPrinter = await PrinterFactory.shared.initPrinter()
     coreDefPrinter.preamble()
-    generateEnums(coreDefPrinter, cdef: nil, values: jsonApi.globalEnums, constantDocs: globalDocs?.constants?.constant, prefix: "")
+    generateEnums(coreDefPrinter, cdef: nil, values: jsonApi.globalEnums, prefix: "")
     await generateBuiltinClasses(values: jsonApi.builtinClasses, outputDir: generatedBuiltinDir)
     await generateUtility(values: jsonApi.utilityFunctions, outputDir: generatedBuiltinDir)
     await generateClasses (values: jsonApi.classes, outputDir: generatedDir)

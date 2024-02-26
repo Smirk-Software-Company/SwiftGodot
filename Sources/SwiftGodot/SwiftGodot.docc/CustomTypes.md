@@ -37,9 +37,14 @@ class MySprite: Sprite {
 }
 ```
 
-The `@Godot` macro does a few things, it creates a default constructor that follows
-the convention to call the parent `init()` method and performs any registrations
-that you might have done in your class for variables or methods.
+The `@Godot` macro does a few things, it creates a default constructor that
+follows the convention to call the parent `init()` method and performs any
+registrations that you might have done in your class for variables or methods.
+
+As you will see later, the @Godot macro is applied to a class definition, and
+will scan your type for various other macros to integrate with Godot.   These
+attributes will not work if you attempt to apply those in a Swift
+extension-method, as the @Godot macro has no visibility into those.
 
 ### Register Your Type
 
@@ -99,35 +104,65 @@ continously by Godot and we use it to change the position of our sprite.
 In addition to modifying the behavior of a built-in type, you might want to
 surface properties that would allow users to customize your type from the Godot
 editor, or expose methods that can be invoked by users from either other
-programming languages, like GDScript or C#, and you might want to [surface
-signals](Signals) that your object emits that can be wired up externally.
+programming languages, like GDScript or C#, and you might want to surface
+<doc:Signals> that your object emits that can be wired up externally.
+
+To do this, you will be using the `@Godot` macro to annotate your class, like
+this:
 
 ```swift
+@Godot
 class SwiftSprite: Sprite2D {
-    static var initClass: Void = {
-        let classInfo = ClassInfo<SwiftSprite> (name: "SwiftSprite")   
-    }
-
-    required init () {
-	SwiftSprite.initClass
-	super.init()
-    }
+}
 ```
 
-Notice that the constructor is now referencing the `initClass` variable, which
-is defined as a lazy property, and will execute the code in `initClass` only
-once on first use.
+When you use the `@Godot` macro, a number of additional macros can be used inside
+your class, like `#signal` [to define signals](Signals.md), `@Callable` to surface a method to
+Godot, and `@Export` to [surface properties](Exports.md).
 
-Inside `initClass`, you will use ``ClassInfo`` to register all your
-capabilities, and you declare it like this:
+Behind the scenes these macros use the lower-level ``ClassDB`` API to define functions,
+properties and their values.
 
-```swift
-   let classInfo = ClassInfo<SwiftSprite> (name: "SwiftSprite")
+### Overriding Methods
+
+The Godot Object model does not surface a traditional object-oriented system.
+Not all the methods surfaced by the Godot API can be overwritten.  The
+SwiftGodot binding makes this explicit.   Methods that can be overwritten are
+declared as `open`, while those that can not be overwritten are declared as
+`public`.
+
+Godot prefixes all of the overwritable methods with an underscore (we have seen
+in this guide some examples already, like `_process`).
+
+Another important difference is that Godot does not expect your code to call the
+"super" method, in fact, those methods do nothing in SwiftGodot.   
+
+Of course, if your Swift code relies on a class hierarhcy where you do delegate
+code to the original implementation, you should still call the base class
+method.   For example:
+
+```
+@Godot 
+class Base: Node2D {
+    override func _ready () { 
+        /* important work */ 
+        /* no need to call super._ready */
+    }
+}
+
+class Derived: Base {
+    override func _ready () {
+        /* some prep work here */
+        /* because we want to execute the Base._ready important work */
+        super._ready ()
+        /* some additional work here */
+    }
+}
 ```
 
-We will come back to it shortly, but before I want to let you know about a
-work-horse of this process, the ``PropInfo`` structure.
-
+You can think of those methods that can be overwritten as hooks into Godot, but
+with an important distinction.   When you override those methods, Godot knows
+that you overwrote them, and might take a different course of action based on it.
 
 #### Surfacing Methods
 
@@ -135,8 +170,8 @@ To surface a method, apply the `@Callable` attribute to it, this will register
 the method with Godot.
 
 The only limitation is that the parameters of those methods need to be one
-of the types that Godot can surface to the rest of the engine: anything that can be
-passed in a ``Variant``.
+of the types that Godot can surface to the rest of the engine: anything that can
+be passed in a ``Variant``.
 
 
 ```swift
@@ -148,6 +183,14 @@ func readyCallback (text: String) {
 ```
 
 Now your method can be invoked from the Godot editor or from scripts written in other languages.
+
+The functions can be any of the types that can be wrapped in a
+[Variant](Variant.md) including the core Swift data types for integers and
+floats, the Godot Object subclasses as well as ``VariantCollection`` and
+``ObjectCollection``.
+
+The `@Callable` macro only works in your class definition, and will not work
+on Swift class extensions.
 
 #### Surfacing Properties and Variables
 
@@ -174,11 +217,14 @@ To learn more, read the <doc:Exports> page.
 
 Surfacing signals is covered in the <doc:Signals> document.
 
-## PropInfo
+## Low-Leve Details: PropInfo
 
 In SwiftGodot, the ``PropInfo`` structure is used to define argument types,
 properties and return values.  You will be exposed to these when you define 
 signal parameters.
+
+This is only required if you do not use the various macros provided by 
+SwiftGodot.
 
 It looks like this:
 

@@ -13,16 +13,25 @@ import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
 
-// Given a TypeSyntax, returns the type and whether it is an optional type or not
-func getIdentifier (_ x: TypeSyntax?) -> (String, Bool)? {
-    guard var x else { return nil }
+/// Given a TypeSyntax, returns the type, the list of generics associated with it, and whether it is an optional type or not
+func getIdentifier (_ typeSyntax: TypeSyntax?) -> (typeName: String, generics: [String], isOptional: Bool)? {
+    guard var typeSyntax else { return nil }
     var opt = false
-    if let optSyntax = x.as (OptionalTypeSyntax.self) {
-        x = optSyntax.wrappedType
+    if let optSyntax = typeSyntax.as (OptionalTypeSyntax.self) {
+        typeSyntax = optSyntax.wrappedType
         opt = true
     }
-    if let txt = x.as (IdentifierTypeSyntax.self)?.name.text {
-        return (txt, opt)
+    if let identifier = typeSyntax.as(IdentifierTypeSyntax.self) {
+        let genericTypeNames: [String] = identifier
+            .genericArgumentClause?
+            .arguments
+            .compactMap { $0.as(GenericArgumentSyntax.self) }
+            .compactMap { $0.argument.as(IdentifierTypeSyntax.self) }
+            .map { $0.name.text } ?? []
+        return (typeName: identifier.name.text, generics: genericTypeNames, isOptional: opt)
+    } else if let array = typeSyntax.as(ArrayTypeSyntax.self),
+       let elementTypeName = array.element.as(IdentifierTypeSyntax.self)?.name.text {
+        return (typeName: "Array", generics: [elementTypeName], isOptional: opt)
     }
     return nil
 }
@@ -38,6 +47,7 @@ enum GodotMacroError: Error, DiagnosticMessage {
     case unsupportedType(VariableDeclSyntax)
     case expectedIdentifier(PatternBindingListSyntax.Element)
     case unknownError(Error)
+    case unsupportedCallableEffect
     
     var severity: DiagnosticSeverity {
         return .error
@@ -65,6 +75,8 @@ enum GodotMacroError: Error, DiagnosticMessage {
             "@Export attribute can not be applied to Array types, use a VariantCollection, or an ObjectCollection instead"
         case .requiresNonOptionalGArrayCollection:
             "@Export optional Collections are not supported"
+        case .unsupportedCallableEffect:
+            "@Callable does not support asynchronous or throwing functions"
 		}
     }
     
@@ -129,6 +141,13 @@ func hasSignalAttribute (_ attrs: AttributeListSyntax?) -> Bool {
 }
 
 func getTypeName (_ parameter: FunctionParameterSyntax) -> String? {
+    guard [
+        parameter.isArray,
+        parameter.isObjectCollection,
+        parameter.isVariantCollection
+    ].allSatisfy ({ $0 == false }) else {
+        return "Array"
+    }
     guard let typeName = parameter.type.as (IdentifierTypeSyntax.self)?.name.text else {
         return nil
     }

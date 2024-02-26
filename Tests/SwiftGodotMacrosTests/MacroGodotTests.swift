@@ -69,8 +69,11 @@ final class MacroGodotTests: XCTestCase {
                     let classInfo = ClassInfo<Hi> (name: className)
                 } ()
 
-                override public class func implementedOverrides() -> [StringName] {
-                    super.implementedOverrides() + [
+                override public class func implementedOverrides () -> [StringName] {
+                    guard !Engine.isEditorHint () else {
+                        return []
+                    }
+                    return super.implementedOverrides () + [
                     	StringName("_has_point"),
                     ]
                 }
@@ -83,7 +86,7 @@ final class MacroGodotTests: XCTestCase {
     func testGodotVirtualMethodsMacro() {
         assertMacroExpansion(
             """
-            @Godot class Hi: Control {
+            @Godot(.tool) class Hi: Control {
                 override func _hasPoint(_ point: Vector2) -> Bool { false }
             }
             """,
@@ -102,8 +105,8 @@ final class MacroGodotTests: XCTestCase {
                     let classInfo = ClassInfo<Hi> (name: className)
                 } ()
             
-                override open class func implementedOverrides() -> [StringName] {
-                    super.implementedOverrides() + [
+                override open class func implementedOverrides () -> [StringName] {
+                    return super.implementedOverrides () + [
                     	StringName("_has_point"),
                     ]
                 }
@@ -301,8 +304,8 @@ final class MacroGodotTests: XCTestCase {
                     }
                     let oldRef = dynamicCast (data, as: RefCounted.self)
                     if let res: MyData = args [0].asObject () {
-                        dynamicCast (data, as: RefCounted.self)?.reference()
-                        data = res
+                        dynamicCast (res, as: RefCounted.self)?.reference()
+                        self.data = res
                     }
                     oldRef?.unreference()
                 	return nil
@@ -334,6 +337,401 @@ final class MacroGodotTests: XCTestCase {
                 } ()
             }
             """,
+            macros: testMacros
+        )
+    }
+    
+    func testGodotMacroWithCallableFuncsWithVariantCollectionReturnType() {
+        assertMacroExpansion(
+            """
+            @Godot
+            class SomeNode: Node {
+                @Callable
+                func getIntegerCollection() -> VariantCollection<Int> {
+                    let result: VariantCollection<Int> = [0, 1, 1, 2, 3, 5, 8]
+                    return result
+                }
+            }
+            """,
+            expandedSource:
+                """
+                class SomeNode: Node {
+                    func getIntegerCollection() -> VariantCollection<Int> {
+                        let result: VariantCollection<Int> = [0, 1, 1, 2, 3, 5, 8]
+                        return result
+                    }
+
+                    func _mproxy_getIntegerCollection (args: [Variant]) -> Variant? {
+                    	let result = getIntegerCollection ()
+                    	return Variant (result)
+                    }
+
+                    override open class var classInitializer: Void {
+                        let _ = super.classInitializer
+                        return _initializeClass
+                    }
+
+                    private static var _initializeClass: Void = {
+                        let className = StringName("SomeNode")
+                        assert(ClassDB.classExists(class: className))
+                        let classInfo = ClassInfo<SomeNode> (name: className)
+                    	let prop_0 = PropInfo (propertyType: .array, propertyName: "", className: StringName("Array[int]"), hint: .arrayType, hintStr: "int", usage: .default)
+                    	classInfo.registerMethod(name: StringName("getIntegerCollection"), flags: .default, returnValue: prop_0, arguments: [], function: SomeNode._mproxy_getIntegerCollection)
+                    } ()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+    
+    func testGodotMacroWithCallableFuncsWithVariantCollectionParam() {
+        assertMacroExpansion(
+            """
+            @Godot
+            class SomeNode: Node {
+                @Callable
+                func square(_ integers: VariantCollection<Int>) -> VariantCollection<Int> {
+                    integers.map { $0 * $0 }.reduce(into: VariantCollection<Int>()) { $0.append(value: $1) }
+                }
+            }
+            """,
+            expandedSource:
+                """
+                
+                class SomeNode: Node {
+                    func square(_ integers: VariantCollection<Int>) -> VariantCollection<Int> {
+                        integers.map { $0 * $0 }.reduce(into: VariantCollection<Int>()) { $0.append(value: $1) }
+                    }
+                
+                    func _mproxy_square (args: [Variant]) -> Variant? {
+                    	let result = square (GArray(args[0])!.reduce(into: VariantCollection<Int>()) {
+                    	        $0.append(value: Int.makeOrUnwrap($1)!)
+                    	    })
+                    	return Variant (result)
+                    }
+                
+                    override open class var classInitializer: Void {
+                        let _ = super.classInitializer
+                        return _initializeClass
+                    }
+                
+                    private static var _initializeClass: Void = {
+                        let className = StringName("SomeNode")
+                        assert(ClassDB.classExists(class: className))
+                        let classInfo = ClassInfo<SomeNode> (name: className)
+                    	let prop_0 = PropInfo (propertyType: .array, propertyName: "", className: StringName("Array[int]"), hint: .arrayType, hintStr: "int", usage: .default)
+                    	let prop_1 = PropInfo (propertyType: .array, propertyName: "integers", className: StringName("Array[int]"), hint: .arrayType, hintStr: "int", usage: .default)
+                    	let squareArgs = [
+                    		prop_1,
+                    	]
+                    	classInfo.registerMethod(name: StringName("square"), flags: .default, returnValue: prop_0, arguments: squareArgs, function: SomeNode._mproxy_square)
+                    } ()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+    
+    func testGodotMacroWithCallableFuncsWithObjectCollectionReturnType() {
+        assertMacroExpansion(
+            """
+            @Godot
+            class SomeNode: Node {
+                @Callable
+                func getNodeCollection() -> ObjectCollection<Node> {
+                    let result: ObjectCollection<Node> = [Node(), Node()]
+                    return result
+                }
+            }
+            """,
+            expandedSource:
+                """
+                class SomeNode: Node {
+                    func getNodeCollection() -> ObjectCollection<Node> {
+                        let result: ObjectCollection<Node> = [Node(), Node()]
+                        return result
+                    }
+
+                    func _mproxy_getNodeCollection (args: [Variant]) -> Variant? {
+                    	let result = getNodeCollection ()
+                    	return Variant (result)
+                    }
+
+                    override open class var classInitializer: Void {
+                        let _ = super.classInitializer
+                        return _initializeClass
+                    }
+
+                    private static var _initializeClass: Void = {
+                        let className = StringName("SomeNode")
+                        assert(ClassDB.classExists(class: className))
+                        let classInfo = ClassInfo<SomeNode> (name: className)
+                    	let prop_0 = PropInfo (propertyType: .array, propertyName: "", className: StringName("Array[Node]"), hint: .arrayType, hintStr: "Node", usage: .default)
+                    	classInfo.registerMethod(name: StringName("getNodeCollection"), flags: .default, returnValue: prop_0, arguments: [], function: SomeNode._mproxy_getNodeCollection)
+                    } ()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+    
+    func testGodotMacroWithCallableFuncsWithObjectCollectionParam() {
+        assertMacroExpansion(
+            """
+            @Godot
+            class SomeNode: Node {
+                @Callable
+                func printNames(of nodes: ObjectCollection<Node>) {
+                    nodes.forEach { print($0.name) }
+                }
+            }
+            """,
+            expandedSource:
+                """
+                
+                class SomeNode: Node {
+                    func printNames(of nodes: ObjectCollection<Node>) {
+                        nodes.forEach { print($0.name) }
+                    }
+                
+                    func _mproxy_printNames (args: [Variant]) -> Variant? {
+                    	printNames (of: GArray(args[0])!.reduce(into: ObjectCollection<Node>()) {
+                    	        $0.append(value: Node.makeOrUnwrap($1)!)
+                    	    })
+                    	return nil
+                    }
+                
+                    override open class var classInitializer: Void {
+                        let _ = super.classInitializer
+                        return _initializeClass
+                    }
+                
+                    private static var _initializeClass: Void = {
+                        let className = StringName("SomeNode")
+                        assert(ClassDB.classExists(class: className))
+                        let classInfo = ClassInfo<SomeNode> (name: className)
+                    	let prop_0 = PropInfo (propertyType: .array, propertyName: "nodes", className: StringName("Array[Node]"), hint: .arrayType, hintStr: "Node", usage: .default)
+                    	let printNamesArgs = [
+                    		prop_0,
+                    	]
+                    	classInfo.registerMethod(name: StringName("printNames"), flags: .default, returnValue: nil, arguments: printNamesArgs, function: SomeNode._mproxy_printNames)
+                    } ()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+    
+    func testGodotMacroWithCallableFuncsWithArrayParam() {
+        assertMacroExpansion(
+            """
+            @Godot
+            class MultiplierNode: Node {
+                @Callable
+                func multiply(_ integers: [Int]) -> Int {
+                    integers.reduce(into: 1) { $0 *= $1 }
+                }
+            }
+            """,
+            expandedSource:
+                """
+                
+                class MultiplierNode: Node {
+                    func multiply(_ integers: [Int]) -> Int {
+                        integers.reduce(into: 1) { $0 *= $1 }
+                    }
+                
+                    func _mproxy_multiply (args: [Variant]) -> Variant? {
+                    	let result = multiply (GArray (args [0])!.compactMap(Int.makeOrUnwrap))
+                    	return Variant (result)
+                    }
+                
+                    override open class var classInitializer: Void {
+                        let _ = super.classInitializer
+                        return _initializeClass
+                    }
+                
+                    private static var _initializeClass: Void = {
+                        let className = StringName("MultiplierNode")
+                        assert(ClassDB.classExists(class: className))
+                        let classInfo = ClassInfo<MultiplierNode> (name: className)
+                    	let prop_0 = PropInfo (propertyType: .int, propertyName: "", className: StringName(""), hint: .none, hintStr: "", usage: .default)
+                    	let prop_1 = PropInfo (propertyType: .array, propertyName: "integers", className: StringName("Array[int]"), hint: .arrayType, hintStr: "int", usage: .default)
+                    	let multiplyArgs = [
+                    		prop_1,
+                    	]
+                    	classInfo.registerMethod(name: StringName("multiply"), flags: .default, returnValue: prop_0, arguments: multiplyArgs, function: MultiplierNode._mproxy_multiply)
+                    } ()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+    
+    func testGodotMacroWithCallableFuncsWithArrayReturnTypes() {
+        assertMacroExpansion(
+            """
+            @Godot
+            class CallableCollectionsNode: Node {
+                @Callable
+                func get_ages() -> [Int] {
+                    [1, 2, 3, 4]
+                }
+            
+                @Callable
+                func get_markers() -> [Marker3D] {
+                    [.init(), .init(), .init()]
+                }
+            }
+            """,
+            expandedSource:
+                """
+                
+                class CallableCollectionsNode: Node {
+                    func get_ages() -> [Int] {
+                        [1, 2, 3, 4]
+                    }
+                
+                    func _mproxy_get_ages (args: [Variant]) -> Variant? {
+                    	let result = get_ages ()
+                    	return Variant ( result.reduce(into: GArray(Int.self)) {
+                    	        $0.append(value: Variant($1))
+                    	    })
+                    }
+                    func get_markers() -> [Marker3D] {
+                        [.init(), .init(), .init()]
+                    }
+                
+                    func _mproxy_get_markers (args: [Variant]) -> Variant? {
+                    	let result = get_markers ()
+                    	return Variant ( result.reduce(into: GArray(Marker3D.self)) {
+                    	        $0.append(value: Variant($1))
+                    	    })
+                    }
+                
+                    override open class var classInitializer: Void {
+                        let _ = super.classInitializer
+                        return _initializeClass
+                    }
+                
+                    private static var _initializeClass: Void = {
+                        let className = StringName("CallableCollectionsNode")
+                        assert(ClassDB.classExists(class: className))
+                        let classInfo = ClassInfo<CallableCollectionsNode> (name: className)
+                    	let prop_0 = PropInfo (propertyType: .array, propertyName: "", className: StringName("Array[int]"), hint: .arrayType, hintStr: "int", usage: .default)
+                    	classInfo.registerMethod(name: StringName("get_ages"), flags: .default, returnValue: prop_0, arguments: [], function: CallableCollectionsNode._mproxy_get_ages)
+                    	let prop_1 = PropInfo (propertyType: .array, propertyName: "", className: StringName("Array[Marker3D]"), hint: .arrayType, hintStr: "Marker3D", usage: .default)
+                    	classInfo.registerMethod(name: StringName("get_markers"), flags: .default, returnValue: prop_1, arguments: [], function: CallableCollectionsNode._mproxy_get_markers)
+                    } ()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+
+    func testGodotMacroWithCallableFuncsWithGenericArrayParam() {
+        assertMacroExpansion(
+            """
+            @Godot
+            class MultiplierNode: Node {
+                @Callable
+                func multiply(_ integers: Array<Int>) -> Int {
+                    integers.reduce(into: 1) { $0 *= $1 }
+                }
+            }
+            """,
+            expandedSource:
+                """
+                
+                class MultiplierNode: Node {
+                    func multiply(_ integers: Array<Int>) -> Int {
+                        integers.reduce(into: 1) { $0 *= $1 }
+                    }
+                
+                    func _mproxy_multiply (args: [Variant]) -> Variant? {
+                    	let result = multiply (GArray (args [0])!.compactMap(Int.makeOrUnwrap))
+                    	return Variant (result)
+                    }
+                
+                    override open class var classInitializer: Void {
+                        let _ = super.classInitializer
+                        return _initializeClass
+                    }
+                
+                    private static var _initializeClass: Void = {
+                        let className = StringName("MultiplierNode")
+                        assert(ClassDB.classExists(class: className))
+                        let classInfo = ClassInfo<MultiplierNode> (name: className)
+                    	let prop_0 = PropInfo (propertyType: .int, propertyName: "", className: StringName(""), hint: .none, hintStr: "", usage: .default)
+                    	let prop_1 = PropInfo (propertyType: .array, propertyName: "integers", className: StringName("Array[int]"), hint: .arrayType, hintStr: "int", usage: .default)
+                    	let multiplyArgs = [
+                    		prop_1,
+                    	]
+                    	classInfo.registerMethod(name: StringName("multiply"), flags: .default, returnValue: prop_0, arguments: multiplyArgs, function: MultiplierNode._mproxy_multiply)
+                    } ()
+                }
+                """,
+            macros: testMacros
+        )
+    }
+    
+    func testGodotMacroWithCallableFuncsWithGenericArrayReturnTypes() {
+        assertMacroExpansion(
+            """
+            @Godot
+            class CallableCollectionsNode: Node {
+                @Callable
+                func get_ages() -> Array<Int> {
+                    [1, 2, 3, 4]
+                }
+            
+                @Callable
+                func get_markers() -> Array<Marker3D> {
+                    [.init(), .init(), .init()]
+                }
+            }
+            """,
+            expandedSource:
+                """
+                
+                class CallableCollectionsNode: Node {
+                    func get_ages() -> Array<Int> {
+                        [1, 2, 3, 4]
+                    }
+                
+                    func _mproxy_get_ages (args: [Variant]) -> Variant? {
+                    	let result = get_ages ()
+                    	return Variant ( result.reduce(into: GArray(Int.self)) {
+                    	        $0.append(value: Variant($1))
+                    	    })
+                    }
+                    func get_markers() -> Array<Marker3D> {
+                        [.init(), .init(), .init()]
+                    }
+                
+                    func _mproxy_get_markers (args: [Variant]) -> Variant? {
+                    	let result = get_markers ()
+                    	return Variant ( result.reduce(into: GArray(Marker3D.self)) {
+                    	        $0.append(value: Variant($1))
+                    	    })
+                    }
+                
+                    override open class var classInitializer: Void {
+                        let _ = super.classInitializer
+                        return _initializeClass
+                    }
+                
+                    private static var _initializeClass: Void = {
+                        let className = StringName("CallableCollectionsNode")
+                        assert(ClassDB.classExists(class: className))
+                        let classInfo = ClassInfo<CallableCollectionsNode> (name: className)
+                    	let prop_0 = PropInfo (propertyType: .array, propertyName: "", className: StringName("Array[int]"), hint: .arrayType, hintStr: "int", usage: .default)
+                    	classInfo.registerMethod(name: StringName("get_ages"), flags: .default, returnValue: prop_0, arguments: [], function: CallableCollectionsNode._mproxy_get_ages)
+                    	let prop_1 = PropInfo (propertyType: .array, propertyName: "", className: StringName("Array[Marker3D]"), hint: .arrayType, hintStr: "Marker3D", usage: .default)
+                    	classInfo.registerMethod(name: StringName("get_markers"), flags: .default, returnValue: prop_1, arguments: [], function: CallableCollectionsNode._mproxy_get_markers)
+                    } ()
+                }
+                """,
             macros: testMacros
         )
     }
@@ -422,7 +820,14 @@ final class MacroGodotTests: XCTestCase {
             	var goodName: String = "Supertop"
             
             	func _mproxy_set_goodName (args: [Variant]) -> Variant? {
-            		goodName = String (args [0])!
+            		guard let arg = args.first else {
+            			return nil
+            		}
+            		if let value = String (arg) {
+            			self.goodName = value
+            		} else {
+            			GD.printErr ("Unable to set `goodName` value: ", arg)
+            		}
             		return nil
             	}
             
