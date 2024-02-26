@@ -878,8 +878,6 @@ let known = [
     "VisualShaderNodeParticleSphereEmitter.swift",
     "VisualShaderNodeProximityFade.swift",
     "VisualShaderNodeRandomRange.swift",
-    "VisualShaderNodeRotationByAxis.swift",
-    "VisualShaderNodeWorldPositionFromDepth.swift",
     "VisualShaderNodeRemap.swift",
     "VisualShaderNodeResizableBase.swift",
     "VisualShaderNodeRotationByAxis.swift",
@@ -964,4 +962,12 @@ let known = [
     "XRServer.swift",
     "ZIPPacker.swift",
     "ZIPReader.swift",
+    "LuaAPI.swift",
+    "LuaCallableExtra.swift",
+    "LuaCoroutine.swift",
+    "LuaDefaultObjectMetatable.swift",
+    "LuaError.swift",
+    "LuaFunctionRef.swift",
+    "LuaObjectMetatable.swift",
+    "LuaTuple.swift"
 ]

@@ -103,35 +103,6 @@ targets.append(contentsOf: [
 swiftGodotPlugins.append("SwiftGodotMacroLibrary")
 #endif
 
-// libgodot is only available for macOS
-#if os(macOS)
-targets.append(contentsOf: [
-    // Godot runtime as a library
-    .binaryTarget(
-        name: "libgodot_tests",
-        url: "https://github.com/migueldeicaza/SwiftGodotKit/releases/download/v4.1.99/libgodot.xcframework.zip",
-        checksum: "c8ddf62be6c00eacc36bd2dafe8d424c0b374833efe80546f6ee76bd27cee84e"
-    ),
-    
-    // Base functionality for Godot runtime dependant tests
-    .target(
-        name: "SwiftGodotTestability",
-        dependencies: [
-            "SwiftGodot",
-            "libgodot_tests",
-            "GDExtension"
-        ]),
-    
-    // General purpose runtime dependant tests
-    .testTarget(
-        name: "SwiftGodotTests",
-        dependencies: [
-            "SwiftGodotTestability",
-        ]
-    ),
-])
-#endif
-
 targets.append(contentsOf: [
     // This is the binding itself, it is made up of our generated code for the
     // Godot API, supporting infrastructure and extensions to the API to provide
